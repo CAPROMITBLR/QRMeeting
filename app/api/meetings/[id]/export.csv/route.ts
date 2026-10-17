@@ -21,20 +21,22 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
     const rows = await sql<{
       name: string;
       college_id: string | null;
+      department: string | null;
       marked_at: Date;
       distance_m: number | null;
     }[]>`
-      select name, college_id, marked_at, distance_m
+      select name, college_id, department, marked_at, distance_m
       from public.attendance
       where meeting_id = ${id}
       order by marked_at asc
     `;
 
     const csv = toCsv([
-      ["Name", "College ID", "Marked at (IST)", "Distance from venue (m)"],
+      ["Name", "College ID", "Department", "Marked at (IST)", "Distance from venue (m)"],
       ...rows.map((row) => [
         row.name,
         row.college_id,
+        row.department,
         formatDateTime(row.marked_at),
         row.distance_m === null ? "" : Math.round(row.distance_m),
       ]),

@@ -9,6 +9,7 @@ export type Attendee = {
   id: string;
   name: string;
   collegeId: string | null;
+  department: string | null;
   markedAt: string;
   distanceM: number | null;
 };
@@ -46,7 +47,10 @@ export function AttendanceLive({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const closeAtRef = useRef<HTMLInputElement>(null);
+  const refreshInFlightRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -54,10 +58,15 @@ export function AttendanceLive({
   }, []);
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const response = await fetch(
         `/api/meetings/${meetingId}/attendance?key=${encodeURIComponent(hostKey)}`,
-        { cache: "no-store" },
+        { cache: "no-store", signal: controller.signal },
       );
       if (!response.ok) {
         setError("Could not refresh attendance.");
@@ -67,8 +76,11 @@ export function AttendanceLive({
       setSnapshot(data);
       setError(null);
       setRefreshedAt(Date.now());
-    } catch {
+    } catch (failure) {
+      if (failure instanceof DOMException && failure.name === "AbortError") return;
       setError("Connection lost — retrying…");
+    } finally {
+      refreshInFlightRef.current = false;
     }
   }, [meetingId, hostKey]);
 
@@ -85,6 +97,7 @@ export function AttendanceLive({
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
+      abortRef.current?.abort();
     };
   }, [refresh]);
 
@@ -116,7 +129,6 @@ export function AttendanceLive({
           autoClosed: closesAt !== null && Date.parse(closesAt) <= Date.now(),
         };
       });
-      void refresh();
       return true;
     } catch {
       setError("Network error. Please try again.");
@@ -159,16 +171,37 @@ export function AttendanceLive({
         setError(data.message ?? "Could not remove the entry.");
         return;
       }
+
       setSnapshot((current) => ({
         ...current,
         count: Math.max(0, current.count - 1),
         attendees: current.attendees.filter((item) => item.id !== attendee.id),
       }));
-      void refresh();
     } catch {
       setError("Network error. Please try again.");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function syncToSheets() {
+    setSyncing(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/meetings/${meetingId}/sync-sheets?key=${encodeURIComponent(hostKey)}`,
+        { method: "POST" },
+      );
+      const data = (await response.json()) as { count?: number; message?: string };
+      if (!response.ok) {
+        setError(data.message ?? "Could not sync to Google Sheets.");
+        return;
+      }
+      setError(`Synced ${data.count ?? 0} attendee${data.count === 1 ? "" : "s"} to Google Sheets.`);
+    } catch {
+      setError("Network error while syncing to Google Sheets.");
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -234,6 +267,7 @@ export function AttendanceLive({
                 <th className="px-4 py-2 font-semibold sm:px-5">#</th>
                 <th className="px-2 py-2 font-semibold">Name</th>
                 <th className="px-2 py-2 font-semibold">College ID</th>
+                <th className="px-2 py-2 font-semibold">Department</th>
                 <th className="px-2 py-2 font-semibold">Distance</th>
                 <th className="px-2 py-2 text-right font-semibold">Time</th>
                 <th className="px-4 py-2 sm:px-5">
@@ -247,6 +281,7 @@ export function AttendanceLive({
                   <td className="px-4 py-2.5 text-xs text-slate-400 sm:px-5">{index + 1}</td>
                   <td className="px-2 py-2.5 font-medium text-navy">{attendee.name}</td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.collegeId ?? "—"}</td>
+                  <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.department ?? "—"}</td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">
                     {attendee.distanceM === null ? "—" : `${Math.round(attendee.distanceM)} m`}
                   </td>
@@ -272,6 +307,14 @@ export function AttendanceLive({
       </div>
 
       <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
+        <button
+          type="button"
+          onClick={syncToSheets}
+          disabled={syncing}
+          className="min-h-11 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
+        >
+          {syncing ? "Syncing to Google Sheets…" : "Sync attendance to Google Sheets"}
+        </button>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <label

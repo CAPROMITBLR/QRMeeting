@@ -3,9 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { DEFAULT_RADIUS_M, RADIUS_MAX_M, RADIUS_MIN_M } from "@/lib/config";
+import { DEFAULT_RADIUS_M } from "@/lib/config";
 import { GeolocationError, requestPosition } from "@/lib/geolocation";
 import { saveHostLink } from "@/lib/host-links";
+import { LOCATION_PRESETS } from "@/lib/locations";
 
 function localDateTimeInput(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -20,6 +21,8 @@ export function CreateMeetingForm() {
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [radius, setRadius] = useState(String(DEFAULT_RADIUS_M));
+  const [durationMinutes, setDurationMinutes] = useState("");
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +42,7 @@ export function CreateMeetingForm() {
       const position = await requestPosition();
       setLat(position.lat.toFixed(6));
       setLng(position.lng.toFixed(6));
+      setSelectedPreset(null);
       setLocationNote(`Using your current position (±${Math.round(position.accuracy)} m).`);
     } catch (failure) {
       setError(
@@ -49,6 +53,27 @@ export function CreateMeetingForm() {
     } finally {
       setLocating(false);
     }
+  }
+
+  function applyPreset(name: string) {
+    const preset = LOCATION_PRESETS[name];
+    if (!preset) return;
+    setLat(preset.latitude.toFixed(6));
+    setLng(preset.longitude.toFixed(6));
+    setRadius(String(preset.radius));
+    setSelectedPreset(name);
+    setLocationNote(
+      `${name} preset selected: ${preset.latitude.toFixed(6)}, ${preset.longitude.toFixed(6)} · ${preset.radius} m radius.`,
+    );
+    setError(null);
+  }
+
+  function clearLocation() {
+    setLat("");
+    setLng("");
+    setRadius(String(DEFAULT_RADIUS_M));
+    setSelectedPreset(null);
+    setLocationNote(null);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -77,6 +102,12 @@ export function CreateMeetingForm() {
     const radiusNumber = Number(radius);
     const closesAt = closesAtRef.current?.value ?? "";
 
+    if (closesAt && durationMinutes) {
+      setError("Choose either a duration or a specific auto-close time, not both.");
+      setPending(false);
+      return;
+    }
+
     if (closesAt && startsAt && new Date(closesAt).getTime() <= new Date(startsAt).getTime()) {
       setError("Auto-close must be after the meeting start.");
       setPending(false);
@@ -94,6 +125,7 @@ export function CreateMeetingForm() {
           lng: lngNumber,
           radiusM: Number.isFinite(radiusNumber) ? radiusNumber : DEFAULT_RADIUS_M,
           closesAt: closesAt ? new Date(closesAt).toISOString() : null,
+          durationMinutes: durationMinutes ? Number(durationMinutes) : null,
         }),
       });
       const data = (await response.json()) as { id?: string; hostToken?: string; message?: string };
@@ -119,6 +151,28 @@ export function CreateMeetingForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="durationMinutes" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          Meeting / QR duration <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>
+        </label>
+        <select
+          id="durationMinutes"
+          value={durationMinutes}
+          onChange={(event) => setDurationMinutes(event.target.value)}
+          className="field focus:field-focus"
+        >
+          <option value="">No automatic expiry</option>
+          <option value="30">30 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="90">1 hour 30 minutes</option>
+          <option value="120">2 hours</option>
+          <option value="180">3 hours</option>
+        </select>
+        <p className="text-[11px] text-slate-400">
+          The QR remains usable until this duration ends. Use the field below instead for a custom deadline.
+        </p>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <label htmlFor="title" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Meeting title
@@ -173,14 +227,42 @@ export function CreateMeetingForm() {
           Add the venue coordinates to only accept attendance from people on site.
         </p>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Campus presets</span>
+          {Object.keys(LOCATION_PRESETS).map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => applyPreset(name)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                selectedPreset === name
+                  ? "border-gold bg-gold text-white"
+                  : "border-gold/50 bg-white text-gold-dark hover:border-gold"
+              }`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           onClick={useCurrentLocation}
           disabled={locating}
-          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-gold/40 bg-white px-3 py-2 text-xs font-semibold text-gold-dark transition hover:border-gold disabled:opacity-60"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gold/40 bg-white px-3 py-2 text-xs font-semibold text-gold-dark transition hover:border-gold disabled:opacity-60"
         >
           {locating ? "Finding you…" : "Use my current location"}
         </button>
+
+        {lat || lng || selectedPreset ? (
+          <button
+            type="button"
+            onClick={clearLocation}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+          >
+            Clear venue location
+          </button>
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">
@@ -194,7 +276,11 @@ export function CreateMeetingForm() {
               step="any"
               inputMode="decimal"
               value={lat}
-              onChange={(event) => setLat(event.target.value)}
+              onChange={(event) => {
+                setLat(event.target.value);
+                setSelectedPreset(null);
+                setLocationNote(null);
+              }}
               placeholder="13.125128"
               className="field focus:field-focus font-mono"
             />
@@ -210,7 +296,11 @@ export function CreateMeetingForm() {
               step="any"
               inputMode="decimal"
               value={lng}
-              onChange={(event) => setLng(event.target.value)}
+              onChange={(event) => {
+                setLng(event.target.value);
+                setSelectedPreset(null);
+                setLocationNote(null);
+              }}
               placeholder="77.589878"
               className="field focus:field-focus font-mono"
             />
@@ -225,12 +315,15 @@ export function CreateMeetingForm() {
             id="radius"
             name="radius"
             type="number"
-            min={RADIUS_MIN_M}
-            max={RADIUS_MAX_M}
-            step={10}
+            min={10}
+            max={5000}
+            step={5}
             inputMode="numeric"
             value={radius}
-            onChange={(event) => setRadius(event.target.value)}
+            onChange={(event) => {
+              setRadius(event.target.value);
+              setSelectedPreset(null);
+            }}
             className="field focus:field-focus w-24 py-2"
           />
         </div>

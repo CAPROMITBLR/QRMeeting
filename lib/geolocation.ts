@@ -22,7 +22,11 @@ const MESSAGES: Record<GeolocationFailureCode, string> = {
   timeout: "Getting your location took too long. Step outside or near a window and try again.",
 };
 
-export function requestPosition(options?: { timeoutMs?: number; highAccuracy?: boolean }): Promise<Coordinates> {
+export function requestPosition(options?: {
+  timeoutMs?: number;
+  highAccuracy?: boolean;
+  maximumAgeMs?: number;
+}): Promise<Coordinates> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     return Promise.reject(new GeolocationError("unsupported", MESSAGES.unsupported));
   }
@@ -42,14 +46,10 @@ export function requestPosition(options?: { timeoutMs?: number; highAccuracy?: b
         reject(new GeolocationError(code, MESSAGES[code]));
       },
       {
-        enableHighAccuracy: true,
+        enableHighAccuracy: options?.highAccuracy ?? false,
         timeout: options?.timeoutMs ?? 15_000,
-        maximumAge: 0,
+        maximumAge: options?.maximumAgeMs ?? 30_000,
       },
     );
   });
-}
-
-export function geolocationFailure(error: unknown): GeolocationError | null {
-  return error instanceof GeolocationError ? error : null;
 }

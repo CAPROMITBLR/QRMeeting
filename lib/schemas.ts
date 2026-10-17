@@ -10,6 +10,7 @@ import {
   RADIUS_MAX_M,
   RADIUS_MIN_M,
   TITLE_MAX_LENGTH,
+  MEETING_DURATION_MAX_MINUTES,
 } from "@/lib/config";
 import { isUuid, normalizeText, parseStartsAt } from "@/lib/validation";
 
@@ -34,6 +35,7 @@ export const createMeetingSchema = z
     lng: longitude.nullish(),
     radiusM: z.number().int().min(RADIUS_MIN_M).max(RADIUS_MAX_M).nullish(),
     closesAt: z.string().nullish(),
+    durationMinutes: z.number().int().min(1).max(MEETING_DURATION_MAX_MINUTES).nullish(),
   })
   .superRefine((value, ctx) => {
     if (parseStartsAt(value.startsAt) === null) {
@@ -51,6 +53,14 @@ export const createMeetingSchema = z
         code: "custom",
         path: ["lat"],
         message: "Provide both latitude and longitude, or neither.",
+      });
+    }
+
+    if (value.closesAt && value.durationMinutes) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["durationMinutes"],
+        message: "Use either a duration or an auto-close time, not both.",
       });
     }
 
@@ -86,6 +96,9 @@ export const attendanceSchema = z.object({
     .refine((value) => !COLLEGE_ID_REQUIRED || value.length > 0, {
       message: "College ID / roll number is required.",
     }),
+  department: z.string().nullish().transform((value) => normalizeText(value ?? "")).refine((value) => value.length <= 100, {
+    message: "Department must be 100 characters or fewer.",
+  }),
   deviceId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/, {
     message: "Could not identify this device. Reload the page and try again.",
   }),
@@ -98,9 +111,6 @@ export const updateMeetingSchema = z.object({
   is_open: z.boolean().optional(),
   closes_at: z.union([z.string(), z.null()]).optional(),
 });
-
-export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
-export type AttendanceInput = z.infer<typeof attendanceSchema>;
 
 export function firstIssueMessage(error: z.ZodError): { field: string; message: string } {
   const issue = error.issues[0];

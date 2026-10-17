@@ -23,12 +23,14 @@ npm run dev
 | `DATABASE_PASSWORD` | Supabase → Project Settings → Database |
 | `SUPABASE_DB_HOST` | Supabase → Connect → Transaction pooler (optional; defaults to this project's region) |
 | `APP_BASE_URL` | Public origin used inside QR codes. Unset locally; set in production |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | Optional Apps Script Web App URL used by the host sync button |
+| `GOOGLE_SHEETS_FACULTY_URL` | Optional Apps Script GET endpoint returning the faculty roster |
 
 `DATABASE_URL` overrides all of the above. Supabase's direct host is IPv6-only, so the pooler is used everywhere.
 
 ## Flow
 
-1. `/` — create a meeting: title, date/time, optional venue geofence (current location or manual lat/lng + radius),
+1. `/` — create a meeting: title, date/time, optional venue geofence (AB4/AB5 campus preset, current location, or manual coordinates + radius),
    optional auto-close time. The server generates the meeting `id` and a 43-character `host_token`.
 2. `/meetings/<id>?key=…` — host view: QR code + PNG download, attendee link, live list (3 s polling) with
    distance from the venue, CSV export, per-row removal, open/close toggle and auto-close controls. Bookmark it.
@@ -40,6 +42,8 @@ npm run dev
 - **Geofence** — set venue coordinates and a radius; attendance is rejected unless the device is inside it
   (haversine, `lib/geo.ts`). Positions with accuracy worse than 100 m are rejected with a retry hint. Meetings
   without coordinates skip the check. `attendance` stores `lat`, `lng` and `distance_m` for audit.
+- **Campus locations** — the meeting form includes the MAHE Bengaluru AB4 and AB5 presets. Presets show their
+  coordinates and use a 45 m default radius that can be adjusted before creation.
 - **Auto-close** — optional `closes_at`; enforced on every mark (`now() >= closes_at` closes the meeting, no cron.
   The host page shows "Auto-closes at HH:MM" plus a live countdown, and can extend, clear or reopen.
 - **Dashboard** — live count, name, college ID, time and distance; CSV export; delete a wrong entry with a
@@ -48,6 +52,23 @@ npm run dev
   creations/min per IP), unique indexes on name and device per meeting, constant-time host-key comparison.
 - **Mobile first** — tested at 375 px: 16 px inputs (no iOS zoom), 48 px primary controls, single-column attend
   form, scrollable host table, large QR.
+- **Google Sheets sync** — the host can push the current meeting attendance to a configured Apps Script Web App
+  without exposing spreadsheet credentials to attendees or the browser.
+- **Department reporting** — attendance captures an optional department and Excel reports include department totals,
+  attendance percentages, and present/absent reconciliation when a faculty roster is configured.
+- **Formatted Excel reports** — the host can download Summary, Department Summary, Attendance, and Faculty Status
+  worksheets instead of relying only on CSV.
+- **Meeting duration** — a duration can automatically expire the QR and attendance window; the host view shows a
+  live QR expiry countdown.
+
+## Google Sheets sync
+
+Copy [`scripts/google-sheets-webhook.gs`](./scripts/google-sheets-webhook.gs) into a Google Apps Script project
+bound to a spreadsheet with an `Attendance` tab. Deploy it as a Web App and set its URL as the server-only
+`GOOGLE_SHEETS_WEBHOOK_URL` environment variable. The host page then provides a sync button. The sync is
+deliberately manual so attendance marking remains fast and a temporary Google outage cannot block check-in.
+If `GOOGLE_SHEETS_FACULTY_URL` is configured, the attendee name field also offers live faculty-name suggestions;
+manual entry remains available if the roster is unavailable.
 
 ## API
 
@@ -57,6 +78,7 @@ npm run dev
 | `PATCH /api/meetings/[id]?key=` | host key | `{ is_open? , closes_at? }` — `closes_at: null` clears it |
 | `GET /api/meetings/[id]/attendance?key=` | host key | `{ isOpen, autoClosed, closesAt, count, attendees[] }` |
 | `GET /api/meetings/[id]/export.csv?key=` | host key | `<title-slug>-attendance.csv`, UTF-8 BOM, CRLF |
+| `GET /api/meetings/[id]/export.xlsx?key=` | host key | Styled workbook with summary, department, attendance and faculty-status sheets |
 | `GET /api/meetings/[id]/qr.png?key=` | host key | PNG attachment named `<title-slug>-qr.png` |
 | `DELETE /api/meetings/[id]/attendance/[attendanceId]?key=` | host key | removes one entry |
 | `POST /api/attendance` | none | `{ meetingId, name, collegeId?, deviceId, lat?, lng?, accuracy? }` |
@@ -80,8 +102,8 @@ Errors from `POST /api/attendance`: `not_found` (404), `closed` (409, manual or 
 ## Deliberate limitations
 
 - **Rate limits are in-memory and per instance.** On serverless the effective ceiling is limit × running
-  instances. `lib/rate-limit.ts` exposes a `RateLimiter` interface; swap in Upstash (or any shared store) by
-  implementing `check`.
+  instances. The limiter implementation is isolated in `lib/rate-limit.ts`; swap it for Upstash (or any shared
+  store) by preserving the `check` contract.
 - **Possession of the host link is the credential.** Anyone with it can view, export and close attendance.
 - **One mark per device.** The device id lives in `localStorage`; clearing site data allows another mark (the name
   unique index still blocks a repeat under the same name).

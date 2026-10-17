@@ -27,11 +27,15 @@ export async function POST(request: Request) {
     return apiError(400, "invalid_input", message);
   }
 
-  const { title, startsAt, lat, lng, radiusM, closesAt } = parsed.data;
+  const { title, startsAt, lat, lng, radiusM, closesAt, durationMinutes } = parsed.data;
   const startsAtDate = parseStartsAt(startsAt);
   if (!startsAtDate) return apiError(400, "invalid_input", "A valid meeting date and time is required.");
 
-  const closesAtDate = closesAt ? parseStartsAt(closesAt) : null;
+  const closesAtDate = closesAt
+    ? parseStartsAt(closesAt)
+    : durationMinutes
+      ? new Date(startsAtDate.getTime() + durationMinutes * 60_000)
+      : null;
   if (closesAt && !closesAtDate) {
     return apiError(400, "invalid_input", "Auto-close must be a valid date and time.");
   }

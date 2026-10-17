@@ -1,6 +1,6 @@
 import { ATTENDANCE_RATE_LIMIT, MEETINGS_RATE_LIMIT, RATE_WINDOW_MS } from "@/lib/config";
 
-export type RateLimitDecision =
+type RateLimitDecision =
   | { allowed: true }
   | { allowed: false; retryAfterSeconds: number };
 
@@ -8,7 +8,7 @@ export type RateLimitDecision =
  * Swap this for a distributed implementation (e.g. Upstash Redis) without
  * touching the routes: only `check` needs to be implemented.
  */
-export interface RateLimiter {
+interface RateLimiter {
   check(key: string): Promise<RateLimitDecision>;
 }
 
@@ -21,7 +21,7 @@ type Bucket = { count: number; resetAt: number };
  * ceiling is (limit × running instances). That is enough to stop refresh loops
  * and naive scripts; use Redis when the limit must be global.
  */
-export function createMemoryRateLimiter(options: { limit: number; windowMs: number }): RateLimiter {
+function createMemoryRateLimiter(options: { limit: number; windowMs: number }): RateLimiter {
   const { limit, windowMs } = options;
   const buckets = new Map<string, Bucket>();
 

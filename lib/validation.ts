@@ -27,8 +27,3 @@ export function parseStartsAt(value: unknown): Date | null {
   if (year < 2000 || year > 2100) return null;
   return date;
 }
-
-/** Device ids are generated client-side as UUIDs; accept any URL-safe id in range. */
-export function isValidDeviceId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(value);
-}

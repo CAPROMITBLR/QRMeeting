@@ -53,28 +53,3 @@ export const sql = globalThis.__meetingQrSql ?? createClient();
 if (process.env.NODE_ENV !== "production") {
   globalThis.__meetingQrSql = sql;
 }
-
-export type MeetingRow = {
-  id: string;
-  title: string;
-  host_token: string;
-  starts_at: Date;
-  created_at: Date;
-  is_open: boolean;
-  lat: number | null;
-  lng: number | null;
-  radius_m: number;
-  closes_at: Date | null;
-};
-
-export type AttendanceRow = {
-  id: string;
-  meeting_id: string;
-  name: string;
-  college_id: string | null;
-  device_id: string;
-  marked_at: Date;
-  lat: number | null;
-  lng: number | null;
-  distance_m: number | null;
-};

@@ -1,7 +1,7 @@
 const INJECTION_PREFIX = /^[=+\-@\t\r]/;
 
 /** Quote a cell and neutralise spreadsheet formula injection. */
-export function csvCell(value: string | number | null | undefined): string {
+function csvCell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
   let text = String(value);
   if (INJECTION_PREFIX.test(text)) text = `'${text}`;
@@ -15,12 +15,15 @@ export function toCsv(rows: Array<Array<string | number | null | undefined>>): s
 }
 
 export function csvFileName(title: string): string {
-  const slug = title
+  return `${fileSlug(title) || "meeting"}-attendance.csv`;
+}
+
+export function fileSlug(value: string): string {
+  return value
     .normalize("NFKD")
     .replace(/[^\w\s-]/g, "")
     .trim()
     .replace(/\s+/g, "-")
     .slice(0, 60)
     .replace(/^-+|-+$/g, "");
-  return `${slug || "meeting"}-attendance.csv`;
 }

@@ -23,6 +23,7 @@ create table if not exists public.attendance (
   meeting_id  uuid not null references public.meetings (id) on delete cascade,
   name        text not null check (char_length(btrim(name)) between 1 and 100),
   college_id  text,
+  department  text,
   device_id   text not null,
   marked_at   timestamptz not null default now(),
   lat         double precision,

@@ -6,6 +6,7 @@ import { AttendanceLive, type Attendee } from "@/components/AttendanceLive";
 import { Brand } from "@/components/Brand";
 import { CopyButton } from "@/components/CopyButton";
 import { RememberHostLink } from "@/components/RememberHostLink";
+import { QrCountdown } from "@/components/QrCountdown";
 import { requestOrigin } from "@/lib/base-url";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
@@ -52,10 +53,11 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
     id: string;
     name: string;
     college_id: string | null;
+    department: string | null;
     marked_at: Date;
     distance_m: number | null;
   }[]>`
-    select id, name, college_id, marked_at, distance_m
+    select id, name, college_id, department, marked_at, distance_m
     from public.attendance
     where meeting_id = ${id}
     order by marked_at asc
@@ -65,6 +67,7 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
     id: row.id,
     name: row.name,
     collegeId: row.college_id,
+    department: row.department,
     markedAt: row.marked_at.toISOString(),
     distanceM: row.distance_m,
   }));
@@ -74,6 +77,7 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
   const hostUrl = `${origin}/meetings/${id}?key=${encodeURIComponent(hostKey)}`;
   const qrSrc = `/api/meetings/${id}/qr.png?key=${encodeURIComponent(hostKey)}`;
   const csvHref = `/api/meetings/${id}/export.csv?key=${encodeURIComponent(hostKey)}`;
+  const xlsxHref = `/api/meetings/${id}/export.xlsx?key=${encodeURIComponent(hostKey)}`;
   const geofenced = meeting.lat !== null && meeting.lng !== null;
   const autoClosed = meeting.auto_closed;
 
@@ -117,6 +121,12 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
         >
           Export CSV
         </a>
+        <a
+          href={xlsxHref}
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-xs font-semibold text-navy transition hover:border-gold hover:text-gold sm:w-auto"
+        >
+          Export Excel report
+        </a>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-slate-600">
@@ -149,6 +159,7 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
           >
             Download QR (PNG)
           </a>
+          <QrCountdown closesAt={meeting.closes_at ? meeting.closes_at.toISOString() : null} />
 
           <div className="rounded-xl border border-line bg-cream px-3 py-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Attendee link</p>

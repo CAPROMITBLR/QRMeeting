@@ -7,6 +7,7 @@ type Attendee = {
   id: string;
   name: string;
   college_id: string | null;
+  department: string | null;
   marked_at: Date;
   distance_m: number | null;
 };
@@ -33,7 +34,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
     }
 
     const rows = await sql<Attendee[]>`
-      select id, name, college_id, marked_at, distance_m
+      select id, name, college_id, department, marked_at, distance_m
       from public.attendance
       where meeting_id = ${id}
       order by marked_at asc
@@ -48,6 +49,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
         id: row.id,
         name: row.name,
         collegeId: row.college_id,
+        department: row.department,
         markedAt: row.marked_at,
         distanceM: row.distance_m,
       })),

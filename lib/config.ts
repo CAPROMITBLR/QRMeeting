@@ -4,7 +4,6 @@ export const COLLEGE_ID_REQUIRED = false;
 export const TITLE_MAX_LENGTH = 120;
 export const NAME_MAX_LENGTH = 100;
 export const COLLEGE_ID_MAX_LENGTH = 50;
-export const DEVICE_ID_MAX_LENGTH = 100;
 
 /** Timezone used when showing meeting times. */
 export const DISPLAY_TIMEZONE = "Asia/Kolkata";
@@ -13,6 +12,7 @@ export const DISPLAY_TIMEZONE = "Asia/Kolkata";
 export const DEFAULT_RADIUS_M = 100;
 export const RADIUS_MIN_M = 10;
 export const RADIUS_MAX_M = 5_000;
+export const MEETING_DURATION_MAX_MINUTES = 24 * 60;
 export const MAX_ACCURACY_M = 100;
 export const MAX_MEANINGFUL_ACCURACY_M = 100_000;
 

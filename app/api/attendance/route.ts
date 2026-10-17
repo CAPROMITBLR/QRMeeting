@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     return apiError(field === "meetingId" ? 404 : 400, field === "meetingId" ? "not_found" : "invalid_input", message);
   }
 
-  const { meetingId, name, collegeId, deviceId, lat, lng, accuracy } = parsed.data;
+  const { meetingId, name, collegeId, department, deviceId, lat, lng, accuracy } = parsed.data;
 
   try {
     const [meeting] = await sql<{
@@ -105,11 +105,12 @@ export async function POST(request: Request) {
     }
 
     const [row] = await sql<{ marked_at: Date }[]>`
-      insert into public.attendance (meeting_id, name, college_id, device_id, lat, lng, distance_m)
+      insert into public.attendance (meeting_id, name, college_id, department, device_id, lat, lng, distance_m)
       values (
         ${meetingId},
         ${name},
         ${collegeId || null},
+        ${department || null},
         ${deviceId},
         ${typeof lat === "number" ? lat : null},
         ${typeof lng === "number" ? lng : null},

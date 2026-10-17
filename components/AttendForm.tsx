@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { COLLEGE_ID_MAX_LENGTH, COLLEGE_ID_REQUIRED, NAME_MAX_LENGTH } from "@/lib/config";
 import { formatDateTime } from "@/lib/format";
@@ -48,9 +48,32 @@ export function AttendForm({
 }) {
   const [name, setName] = useState("");
   const [collegeId, setCollegeId] = useState("");
+  const [department, setDepartment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [marked, setMarked] = useState<Marked | null>(null);
+  const [faculty, setFaculty] = useState<Array<{ facultyId: string; name: string }>>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/faculty")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { members?: Array<{ facultyId?: string; name?: string }> } | null) => {
+        if (!active || !data?.members) return;
+        setFaculty(
+          data.members.filter(
+            (member): member is { facultyId: string; name: string } =>
+              typeof member.facultyId === "string" && typeof member.name === "string",
+          ),
+        );
+      })
+      .catch(() => {
+        // The roster is optional; manual entry remains available.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,10 +81,10 @@ export function AttendForm({
     setError(null);
 
     let coordinates: Coordinates | null = null;
-    try {
-      coordinates = await requestPosition();
-    } catch (failure) {
-      if (requiresLocation) {
+    if (requiresLocation) {
+      try {
+        coordinates = await requestPosition({ highAccuracy: true, timeoutMs: 15_000, maximumAgeMs: 30_000 });
+      } catch (failure) {
         setError(
           failure instanceof GeolocationError
             ? failure.message
@@ -70,8 +93,6 @@ export function AttendForm({
         setPending(false);
         return;
       }
-      // Location is optional here: continue without it.
-      coordinates = null;
     }
 
     try {
@@ -82,6 +103,7 @@ export function AttendForm({
           meetingId,
           name,
           collegeId,
+          department,
           deviceId: readOrCreateDeviceId(),
           lat: coordinates?.lat ?? null,
           lng: coordinates?.lng ?? null,
@@ -142,6 +164,21 @@ export function AttendForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
+        <label htmlFor="department" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          Department <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>
+        </label>
+        <input
+          id="department"
+          name="department"
+          maxLength={100}
+          value={department}
+          onChange={(event) => setDepartment(event.target.value)}
+          placeholder="SOCE"
+          className="field focus:field-focus"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
         <label htmlFor="name" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Full name
         </label>
@@ -155,7 +192,15 @@ export function AttendForm({
           onChange={(event) => setName(event.target.value)}
           placeholder="Dr. A. Sharma"
           className="field focus:field-focus"
+          list="faculty-names"
         />
+        {faculty.length > 0 ? (
+          <datalist id="faculty-names">
+            {faculty.map((member) => (
+              <option key={member.facultyId} value={member.name} />
+            ))}
+          </datalist>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">
