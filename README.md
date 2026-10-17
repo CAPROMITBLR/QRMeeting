@@ -1,5 +1,9 @@
 # Meeting Attendance (QR)
 
+Live link:
+
+[qr-meeting-seven.vercel.ap](qr-meeting-seven.vercel.app)
+
 A professor creates a meeting, shows a QR code, and attendees mark attendance from their phones. The host page
 shows names arriving live, with optional on-site verification and automatic closing. No accounts, no Microsoft
 login: the host page is protected by a secret key in its URL.
