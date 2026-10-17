@@ -74,9 +74,7 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
 
   const origin = await requestOrigin();
   const attendUrl = attendeeUrl(origin, id);
-  const hostUrl = `${origin}/meetings/${id}?key=${encodeURIComponent(hostKey)}`;
   const qrSrc = `/api/meetings/${id}/qr.png?key=${encodeURIComponent(hostKey)}`;
-  const csvHref = `/api/meetings/${id}/export.csv?key=${encodeURIComponent(hostKey)}`;
   const xlsxHref = `/api/meetings/${id}/export.xlsx?key=${encodeURIComponent(hostKey)}`;
   const geofenced = meeting.lat !== null && meeting.lng !== null;
   const autoClosed = meeting.auto_closed;
@@ -116,23 +114,11 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
           ) : null}
         </div>
         <a
-          href={csvHref}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-xs font-semibold text-navy transition hover:border-gold hover:text-gold sm:w-auto"
-        >
-          Export CSV
-        </a>
-        <a
           href={xlsxHref}
           className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-xs font-semibold text-navy transition hover:border-gold hover:text-gold sm:w-auto"
         >
           Export Excel report
         </a>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-slate-600">
-        <span className="font-semibold text-gold-dark">Bookmark this page.</span>
-        <span>Anyone with this host link can see and control attendance — keep it private.</span>
-        <CopyButton value={hostUrl} label="Copy host link" />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
