@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-cream: #fffcf7;
+  --color-gold: #b67f3f;
+  --color-gold-dark: #8c5e26;
+  --color-navy: #2a3648;
+  --color-line: #e8e1d4;
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-playfair);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-cream);
+    color: #1f2937;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+  }
+}
+
+@utility bg-dot {
+  background-image: radial-gradient(#e8e1d4 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+@utility card {
+  border-radius: 1rem;
+  border: 1px solid var(--color-line);
+  background-color: #ffffff;
+  box-shadow:
+    0 1px 2px rgb(42 54 72 / 0.04),
+    0 12px 32px -12px rgb(42 54 72 / 0.18);
+}
+
+@utility field {
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-line);
+  background-color: #ffffff;
+  padding: 0.75rem 0.875rem;
+  /* 16px keeps iOS from zooming the page when a field gets focus. */
+  font-size: 1rem;
+  color: #1f2937;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+@utility field-focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgb(182 127 63 / 0.18);
+}
