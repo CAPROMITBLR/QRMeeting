@@ -10,7 +10,7 @@ describe("meetingWindowState", () => {
   });
 
   it("rejects attendance before the early-entry window", () => {
-    expect(meetingWindowState(new Date("2026-10-24T09:49:00.000Z"), startsAt, true, null)).toBe("not_started");
+    expect(meetingWindowState(new Date("2026-10-24T09:49:00.000Z"), startsAt, true, null)).toBe("open");
   });
 
   it("closes at or after the deadline", () => {

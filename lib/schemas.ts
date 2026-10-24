@@ -109,8 +109,6 @@ export const attendanceSchema = z.object({
   lat: latitude.nullish(),
   lng: longitude.nullish(),
   accuracy: z.number().min(0).max(MAX_MEANINGFUL_ACCURACY_M).nullish(),
-  qrToken: z.string().min(1).nullish(),
-  qrSlot: z.number().int().nonnegative().nullish(),
 }).superRefine((value, ctx) => {
   const hasLat = typeof value.lat === "number";
   const hasLng = typeof value.lng === "number";

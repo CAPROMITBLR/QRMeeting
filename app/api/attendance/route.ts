@@ -1,11 +1,9 @@
 import { apiError, json } from "@/lib/http";
-import { EARLY_ENTRY_MINUTES } from "@/lib/config";
 import { sql } from "@/lib/db";
 import { decideGeofence } from "@/lib/geo";
 import { attendanceRateLimiter } from "@/lib/rate-limit";
 import { attendanceSchema, firstIssueMessage } from "@/lib/schemas";
 import { meetingWindowState } from "@/lib/time-window";
-import { verifyQrToken } from "@/lib/qr";
 import { checkRateLimit, readJson } from "@/lib/request";
 
 function isUniqueViolation(error: unknown): boolean {
@@ -24,12 +22,11 @@ export async function POST(request: Request) {
     return apiError(field === "meetingId" ? 404 : 400, field === "meetingId" ? "not_found" : "invalid_input", message);
   }
 
-  const { meetingId, name, collegeId, department, deviceId, lat, lng, accuracy, qrToken, qrSlot } = parsed.data;
+  const { meetingId, name, collegeId, department, deviceId, lat, lng, accuracy } = parsed.data;
 
   try {
     const [meeting] = await sql<{
       title: string;
-      host_token: string;
       is_open: boolean;
       starts_at: Date;
       lat: number | null;
@@ -37,19 +34,13 @@ export async function POST(request: Request) {
       radius_m: number;
       closes_at: Date | null;
     }[]>`
-      select title, host_token, is_open, starts_at, lat, lng, radius_m, closes_at
+      select title, is_open, starts_at, lat, lng, radius_m, closes_at
       from public.meetings
       where id = ${meetingId}
     `;
 
     if (!meeting) return apiError(404, "not_found", "This meeting does not exist.");
-    if (!verifyQrToken(meeting.host_token, meetingId, qrToken, qrSlot)) {
-      return apiError(403, "qr_expired", "QR expired, scan the screen again.");
-    }
     const initialWindowState = meetingWindowState(new Date(), meeting.starts_at, meeting.is_open, meeting.closes_at);
-    if (initialWindowState === "not_started") {
-      return apiError(409, "not_started", "Attendance is not open yet. Please try again closer to the meeting start.");
-    }
     if (initialWindowState === "closed") {
       return apiError(409, "closed", "Attendance is closed for this meeting.");
     }
@@ -131,7 +122,6 @@ export async function POST(request: Request) {
       from public.meetings
       where id = ${meetingId}
         and is_open
-        and now() >= starts_at - (${EARLY_ENTRY_MINUTES} * interval '1 minute')
         and (closes_at is null or closes_at > now())
       returning marked_at
     `;
@@ -146,9 +136,6 @@ export async function POST(request: Request) {
       `;
       if (currentMeeting) {
         const state = meetingWindowState(new Date(), currentMeeting.starts_at, currentMeeting.is_open, currentMeeting.closes_at);
-        if (state === "not_started") {
-          return apiError(409, "not_started", "Attendance is not open yet. Please try again closer to the meeting start.");
-        }
         if (state === "closed") {
           return apiError(409, "closed", "Attendance is closed for this meeting.");
         }

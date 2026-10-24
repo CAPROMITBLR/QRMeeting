@@ -13,7 +13,6 @@ export const DEFAULT_RADIUS_M = 100;
 export const RADIUS_MIN_M = 10;
 export const RADIUS_MAX_M = 5_000;
 export const MEETING_DURATION_MAX_MINUTES = 24 * 60;
-export const EARLY_ENTRY_MINUTES = 10;
 export const MAX_ACCURACY_M = 500;
 export const ACCURACY_BUFFER_M = 150;
 export const MAX_MEANINGFUL_ACCURACY_M = 100_000;
@@ -25,4 +24,3 @@ export const RATE_WINDOW_MS = 60_000;
 
 /** Host page polling interval. */
 export const ATTENDANCE_POLL_MS = 3_000;
-export const QR_ROTATE_SECONDS = 45;

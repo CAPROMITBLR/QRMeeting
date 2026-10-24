@@ -13,29 +13,47 @@ function localDateTimeInput(date: Date): string {
   return istDateTimeInput(date);
 }
 
+function todayIst(): string {
+  return localDateTimeInput(new Date()).split("T")[0] ?? "";
+}
+
 export function CreateMeetingForm() {
   const router = useRouter();
-  const startsAtRef = useRef<HTMLInputElement>(null);
-  const closesAtRef = useRef<HTMLInputElement>(null);
+  const startsAtDateRef = useRef<HTMLInputElement>(null);
+  const startsAtTimeRef = useRef<HTMLInputElement>(null);
+  const closesAtDateRef = useRef<HTMLInputElement>(null);
+  const closesAtTimeRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [radius, setRadius] = useState(String(DEFAULT_RADIUS_M));
   const [durationMinutes, setDurationMinutes] = useState("");
+  const [startsAtDate, setStartsAtDate] = useState("");
+  const [startsAtTime, setStartsAtTime] = useState("");
+  const [closesAtDate, setClosesAtDate] = useState("");
+  const [closesAtTime, setClosesAtTime] = useState("");
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const [locationCaptured, setLocationCaptured] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const today = todayIst();
 
   // Seeded on the client so the value matches the visitor's clock and timezone.
   useEffect(() => {
-    const input = startsAtRef.current;
-    if (input && !input.value) input.value = localDateTimeInput(new Date(Date.now() + 60 * 60 * 1000));
+    const timer = window.setTimeout(() => {
+      const value = localDateTimeInput(new Date());
+      const [date, time] = value.split("T");
+      setStartsAtDate(date ?? "");
+      setStartsAtTime(time ?? "");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   async function useCurrentLocation() {
     setLocationNote(null);
+    setLocationCaptured(false);
     setError(null);
     setLocating(true);
     try {
@@ -43,6 +61,7 @@ export function CreateMeetingForm() {
       setLat(position.lat.toFixed(6));
       setLng(position.lng.toFixed(6));
       setSelectedPreset(null);
+      setLocationCaptured(true);
       setLocationNote(`Saved venue point from your current position (GPS accuracy ±${Math.round(position.accuracy)} m).`);
     } catch (failure) {
       setError(
@@ -74,6 +93,7 @@ export function CreateMeetingForm() {
     setRadius(String(DEFAULT_RADIUS_M));
     setSelectedPreset(null);
     setLocationNote(null);
+    setLocationCaptured(false);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -81,7 +101,7 @@ export function CreateMeetingForm() {
     setPending(true);
     setError(null);
 
-    const startsAt = startsAtRef.current?.value ?? "";
+    const startsAt = startsAtDate && startsAtTime ? `${startsAtDate}T${startsAtTime}` : "";
     const hasLat = lat.trim() !== "";
     const hasLng = lng.trim() !== "";
 
@@ -100,18 +120,10 @@ export function CreateMeetingForm() {
     }
 
     const radiusNumber = Number(radius);
-    const closesAt = closesAtRef.current?.value ?? "";
+    const closesAt = closesAtDate && closesAtTime ? `${closesAtDate}T${closesAtTime}` : "";
 
     if (closesAt && durationMinutes) {
       setError("Choose either a duration or a specific auto-close time, not both.");
-      setPending(false);
-      return;
-    }
-
-    const startsAtDate = parseIstDateTime(startsAt);
-    const closesAtDate = closesAt ? parseIstDateTime(closesAt) : null;
-    if (closesAt && startsAtDate && closesAtDate && closesAtDate.getTime() <= startsAtDate.getTime()) {
-      setError("Auto-close must be after the meeting start.");
       setPending(false);
       return;
     }
@@ -195,27 +207,83 @@ export function CreateMeetingForm() {
         <label htmlFor="startsAt" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Date and time (IST)
         </label>
-        <input
-          id="startsAt"
-          name="startsAt"
-          ref={startsAtRef}
-          type="datetime-local"
-          required
-          className="field focus:field-focus"
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            id="startsAtDate"
+            name="startsAtDate"
+            ref={startsAtDateRef}
+            type="date"
+            min={today}
+            required
+            value={startsAtDate}
+            onChange={(event) => {
+              const value = event.target.value;
+              setStartsAtDate(value);
+              if (closesAtDate && value > closesAtDate) {
+                setClosesAtDate("");
+                setClosesAtTime("");
+              }
+            }}
+            className="field focus:field-focus"
+          />
+          <input
+            id="startsAtTime"
+            name="startsAtTime"
+            ref={startsAtTimeRef}
+            type="time"
+            required
+            value={startsAtTime}
+            onChange={(event) => {
+              const value = event.target.value;
+              setStartsAtTime(value);
+              if (closesAtDate === startsAtDate && closesAtTime && value >= closesAtTime) {
+                setClosesAtDate("");
+                setClosesAtTime("");
+              }
+            }}
+            className="field focus:field-focus"
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="closesAt" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Auto-close at (IST) <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>
         </label>
-        <input
-          id="closesAt"
-          name="closesAt"
-          ref={closesAtRef}
-          type="datetime-local"
-          className="field focus:field-focus"
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            id="closesAtDate"
+            name="closesAtDate"
+            ref={closesAtDateRef}
+            type="date"
+            min={startsAtDate || undefined}
+            value={closesAtDate}
+            onChange={(event) => setClosesAtDate(event.target.value)}
+            className="field focus:field-focus"
+          />
+          <input
+            id="closesAtTime"
+            name="closesAtTime"
+            ref={closesAtTimeRef}
+            type="time"
+            min={closesAtDate === startsAtDate ? startsAtTime : undefined}
+            value={closesAtTime}
+            onChange={(event) => setClosesAtTime(event.target.value)}
+            className="field focus:field-focus"
+          />
+        </div>
+        {closesAtDate || closesAtTime ? (
+          <button
+            type="button"
+            onClick={() => {
+              setClosesAtDate("");
+              setClosesAtTime("");
+            }}
+            className="self-start text-xs font-semibold text-slate-500 hover:text-red-600"
+          >
+            Clear auto-close
+          </button>
+        ) : null}
         <p className="text-[11px] text-slate-400">
           Leave empty to close attendance manually. You can change this later from the host page.
         </p>
@@ -251,9 +319,13 @@ export function CreateMeetingForm() {
           type="button"
           onClick={useCurrentLocation}
           disabled={locating}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gold/40 bg-white px-3 py-2 text-xs font-semibold text-gold-dark transition hover:border-gold disabled:opacity-60"
+          className={`inline-flex min-h-11 items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-60 ${
+            locationCaptured
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+              : "border-gold/40 bg-white text-gold-dark hover:border-gold"
+          }`}
         >
-          {locating ? "Finding you…" : "Use my current location"}
+          {locating ? "Finding your location…" : locationCaptured ? "Location captured" : "Use my current location"}
         </button>
 
         {lat || lng || selectedPreset ? (
@@ -341,10 +413,10 @@ export function CreateMeetingForm() {
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || locating}
         className="mt-1 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gold px-5 py-3 text-sm font-semibold text-white shadow-[0_6px_18px_-6px_rgba(182,127,63,0.8)] transition hover:bg-gold-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {pending ? "Creating…" : "Create meeting"}
+        {pending ? "Creating…" : locating ? "Waiting for location…" : "Create meeting"}
       </button>
 
       <p className="text-center text-xs text-slate-400">

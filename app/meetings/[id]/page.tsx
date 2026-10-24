@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 import { AttendanceLive, type Attendee } from "@/components/AttendanceLive";
@@ -6,12 +7,11 @@ import { Brand } from "@/components/Brand";
 import { CopyButton } from "@/components/CopyButton";
 import { RememberHostLink } from "@/components/RememberHostLink";
 import { QrCountdown } from "@/components/QrCountdown";
-import { RotatingQr } from "@/components/RotatingQr";
 import { requestOrigin } from "@/lib/base-url";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { hostKeyMatches } from "@/lib/host-key";
-import { attendeeUrl, currentQrSlot, qrToken } from "@/lib/qr";
+import { attendeeUrl } from "@/lib/qr";
 import { isUuid } from "@/lib/validation";
 
 export const metadata: Metadata = {
@@ -73,8 +73,7 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
   }));
 
   const origin = await requestOrigin();
-  const slot = currentQrSlot();
-  const attendUrl = attendeeUrl(origin, id, qrToken(meeting.host_token, id, slot), slot);
+  const attendUrl = attendeeUrl(origin, id);
   const qrSrc = `/api/meetings/${id}/qr.png?key=${encodeURIComponent(hostKey)}`;
   const xlsxHref = `/api/meetings/${id}/export.xlsx?key=${encodeURIComponent(hostKey)}`;
   const geofenced = meeting.lat !== null && meeting.lng !== null;
@@ -92,11 +91,8 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:gap-5 sm:px-5 sm:py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <Brand subtitle="Host view" />
-        <Link
-          href="/"
-          className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-gold hover:text-gold"
-        >
-          Create another meeting
+        <Link href="/" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-gold hover:text-gold">
+          ← Back to meetings
         </Link>
       </div>
 
@@ -130,7 +126,14 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
           </div>
 
           <div className="mx-auto rounded-xl border border-line bg-white p-3">
-            <RotatingQr src={qrSrc} alt={`QR code for ${meeting.title}`} />
+            <Image
+              src={qrSrc}
+              alt={`QR code for ${meeting.title}`}
+              width={256}
+              height={256}
+              unoptimized
+              className="h-56 w-56 sm:h-64 sm:w-64"
+            />
           </div>
 
           <a
@@ -144,6 +147,9 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
           <div className="rounded-xl border border-line bg-cream px-3 py-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Attendee link</p>
             <p className="mt-1 break-all font-mono text-[11px] text-slate-600">{attendUrl}</p>
+            <p className="mt-2 text-xs text-slate-500">
+              This link stays the same and can be shared with attendees to join directly.
+            </p>
             <div className="mt-2">
               <CopyButton value={attendUrl} label="Copy attendee link" />
             </div>

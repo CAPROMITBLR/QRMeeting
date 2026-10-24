@@ -41,14 +41,16 @@ export function AttendForm({
   meetingId,
   title,
   requiresLocation,
-  qrToken,
-  qrSlot,
+  meetingLatitude,
+  meetingLongitude,
+  meetingRadius,
 }: {
   meetingId: string;
   title: string;
   requiresLocation: boolean;
-  qrToken: string | null;
-  qrSlot: number | null;
+  meetingLatitude: number | null;
+  meetingLongitude: number | null;
+  meetingRadius: number | null;
 }) {
   const [name, setName] = useState("");
   const [collegeId, setCollegeId] = useState("");
@@ -56,6 +58,7 @@ export function AttendForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [marked, setMarked] = useState<Marked | null>(null);
+  const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [faculty, setFaculty] = useState<Array<{ facultyId: string; name: string }>>([]);
 
   useEffect(() => {
@@ -93,6 +96,7 @@ export function AttendForm({
       }
       try {
         coordinates = await requestPosition();
+        setCoordinates(coordinates);
       } catch (failure) {
         setError(
           failure instanceof GeolocationError
@@ -114,8 +118,6 @@ export function AttendForm({
           collegeId,
           department,
           deviceId: readOrCreateDeviceId(),
-          qrToken,
-          qrSlot,
           lat: coordinates?.lat ?? null,
           lng: coordinates?.lng ?? null,
           accuracy: coordinates?.accuracy ?? null,
@@ -183,6 +185,24 @@ export function AttendForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div className="rounded-xl border border-line bg-cream/60 px-4 py-3 text-xs text-slate-600">
+        <p className="font-semibold uppercase tracking-[0.12em] text-slate-500">Meeting location</p>
+        {meetingLatitude !== null && meetingLongitude !== null ? (
+          <p className="mt-1 font-mono text-[11px] text-navy">
+            {meetingLatitude.toFixed(6)}, {meetingLongitude.toFixed(6)}
+            {meetingRadius !== null ? ` · allowed radius ${meetingRadius} m` : ""}
+          </p>
+        ) : (
+          <p className="mt-1">This meeting does not use location verification.</p>
+        )}
+        {coordinates ? (
+          <p className="mt-2 border-t border-line pt-2 font-mono text-[11px] text-emerald-700">
+            Your location: {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
+            <br />
+            GPS accuracy: ±{Math.round(coordinates.accuracy)} m
+          </p>
+        ) : null}
+      </div>
       <div className="flex flex-col gap-1.5">
         <label htmlFor="department" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Department <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>

@@ -1,7 +1,7 @@
 import { apiError, getBaseUrl } from "@/lib/http";
 import { sql } from "@/lib/db";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
-import { attendeeUrl, currentQrSlot, qrFileName, qrPng, qrToken } from "@/lib/qr";
+import { attendeeUrl, qrFileName, qrPng } from "@/lib/qr";
 import { isUuid } from "@/lib/validation";
 
 export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id]/qr.png">) {
@@ -17,16 +17,15 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
       return apiError(403, "forbidden", "This host link is not valid.");
     }
 
-    const slot = currentQrSlot();
-    const png = await qrPng(attendeeUrl(getBaseUrl(request), id, qrToken(meeting.host_token, id, slot), slot));
-    const fileName = qrFileName(meeting.title);
+    const png = await qrPng(attendeeUrl(getBaseUrl(request), id));
+    const fileName = qrFileName(meeting.title, id);
 
     return new Response(new Uint8Array(png), {
       headers: {
         "content-type": "image/png",
         "content-length": String(png.byteLength),
         "content-disposition": `attachment; filename="${fileName.replace(/[^\x20-\x7E]/g, "")}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        "cache-control": "no-store, max-age=0",
+        "cache-control": "no-store",
       },
     });
   } catch (error) {

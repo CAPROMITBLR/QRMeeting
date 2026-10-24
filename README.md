@@ -27,7 +27,6 @@ npm run dev
 | `DATABASE_PASSWORD` | Supabase → Project Settings → Database |
 | `SUPABASE_DB_HOST` | Supabase → Connect → Transaction pooler (optional; defaults to this project's region) |
 | `APP_BASE_URL` | Public origin used inside QR codes. Unset locally; set in production |
-| `GOOGLE_SHEETS_WEBHOOK_URL` | Optional Apps Script Web App URL used by the host sync button |
 | `GOOGLE_SHEETS_FACULTY_URL` | Optional Apps Script GET endpoint returning the faculty roster |
 
 `DATABASE_URL` overrides all of the above. Supabase's direct host is IPv6-only, so the pooler is used everywhere.
@@ -57,8 +56,6 @@ npm run dev
   creations/min per IP), unique indexes on name and device per meeting, constant-time host-key comparison.
 - **Mobile first** — tested at 375 px: 16 px inputs (no iOS zoom), 48 px primary controls, single-column attend
   form, scrollable host table, large QR.
-- **Google Sheets sync** — the host can push the current meeting attendance to a configured Apps Script Web App
-  without exposing spreadsheet credentials to attendees or the browser.
 - **Department reporting** — attendance captures an optional department and Excel reports include department totals,
   attendance percentages, and present/absent reconciliation when a faculty roster is configured.
 - **Formatted Excel reports** — the host can download Summary, Department Summary, Attendance, and Faculty Status
@@ -66,13 +63,7 @@ npm run dev
 - **Meeting duration** — a duration can automatically expire the QR and attendance window; the host view shows a
   live QR expiry countdown.
 
-## Google Sheets sync
-
-Copy [`scripts/google-sheets-webhook.gs`](./scripts/google-sheets-webhook.gs) into a Google Apps Script project
-bound to a spreadsheet with an `Attendance` tab. Deploy it as a Web App and set its URL as the server-only
-`GOOGLE_SHEETS_WEBHOOK_URL` environment variable. The host page then provides a sync button. The sync is
-deliberately manual so attendance marking remains fast and a temporary Google outage cannot block check-in.
-If `GOOGLE_SHEETS_FACULTY_URL` is configured, the attendee name field also offers live faculty-name suggestions;
+If `GOOGLE_SHEETS_FACULTY_URL` is configured, the attendee name field offers live faculty-name suggestions;
 manual entry remains available if the roster is unavailable.
 
 ## API
@@ -84,12 +75,11 @@ manual entry remains available if the roster is unavailable.
 | `GET /api/meetings/[id]/attendance?key=` | host key | `{ isOpen, autoClosed, closesAt, count, attendees[] }` |
 | `GET /api/meetings/[id]/export.csv?key=` | host key | `<title-slug>-attendance.csv`, UTF-8 BOM, CRLF |
 | `GET /api/meetings/[id]/export.xlsx?key=` | host key | Styled workbook with summary, department, attendance and faculty-status sheets |
-| `GET /api/meetings/[id]/qr.png?key=` | host key | PNG attachment named `<title-slug>-qr.png` |
+| `GET /api/meetings/[id]/qr.png?key=` | host key | Static QR PNG attachment named `meeting_<last-8-id>.png` |
 | `DELETE /api/meetings/[id]/attendance/[attendanceId]?key=` | host key | removes one entry |
-| `POST /api/attendance` | rotating QR token | `{ meetingId, name, collegeId?, deviceId, lat?, lng?, accuracy?, qrToken, qrSlot }` |
+| `POST /api/attendance` | none | `{ meetingId, name, collegeId?, deviceId, lat?, lng?, accuracy? }` |
 
-Errors from `POST /api/attendance`: `not_found` (404), `not_started` / `closed` (409, including the 10-minute early-entry
-window), `qr_expired` (403), `duplicate_name` /
+Errors from `POST /api/attendance`: `not_found` (404), `closed` (409), `duplicate_name` /
 `duplicate_device` (409), `outside_range` / `location_required` / `location_inaccurate` (403), `invalid_input`
 (400), `rate_limited` (429 with `Retry-After`), `server_error` (500). Every error carries a `message`.
 
@@ -120,9 +110,9 @@ window), `qr_expired` (403), `duplicate_name` /
 
 ### Attendance verification limits
 
-Browser GPS can be spoofed or replaced by a crafted request. Rotating signed QR tokens and the geofence reduce
+Browser GPS can be spoofed or replaced by a crafted request. The static QR and geofence reduce
 casual sharing and proxy attendance but do not eliminate it. The app has no in-app camera scanner; attendees use
-their phone's camera or QR scanner to open the rotating attendance link.
+their phone's camera or QR scanner to open the attendance link.
 
 ## Manual test checklist
 

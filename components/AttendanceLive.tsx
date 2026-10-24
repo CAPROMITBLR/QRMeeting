@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ATTENDANCE_POLL_MS } from "@/lib/config";
 import { formatClock, formatTime } from "@/lib/format";
+import { istDateTimeInput, parseIstDateTime } from "@/lib/timezone";
 
 export type Attendee = {
   id: string;
@@ -47,8 +48,8 @@ export function AttendanceLive({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const closeAtRef = useRef<HTMLInputElement>(null);
+  const [editingAutoClose, setEditingAutoClose] = useState(false);
+  const [autoCloseDraft, setAutoCloseDraft] = useState("");
   const refreshInFlightRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -148,12 +149,12 @@ export function AttendanceLive({
   }
 
   async function saveAutoClose() {
-    const value = closeAtRef.current?.value ?? "";
-    if (!value) {
+    const parsed = parseIstDateTime(autoCloseDraft);
+    if (!parsed) {
       setError("Pick a date and time first.");
       return;
     }
-    await patchMeeting({ closes_at: new Date(value).toISOString() });
+    if (await patchMeeting({ closes_at: parsed.toISOString() })) setEditingAutoClose(false);
   }
 
   async function removeAttendee(attendee: Attendee) {
@@ -181,27 +182,6 @@ export function AttendanceLive({
       setError("Network error. Please try again.");
     } finally {
       setDeletingId(null);
-    }
-  }
-
-  async function syncToSheets() {
-    setSyncing(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        `/api/meetings/${meetingId}/sync-sheets?key=${encodeURIComponent(hostKey)}`,
-        { method: "POST" },
-      );
-      const data = (await response.json()) as { count?: number; message?: string };
-      if (!response.ok) {
-        setError(data.message ?? "Could not sync to Google Sheets.");
-        return;
-      }
-      setError(`Synced ${data.count ?? 0} attendee${data.count === 1 ? "" : "s"} to Google Sheets.`);
-    } catch {
-      setError("Network error while syncing to Google Sheets.");
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -244,6 +224,55 @@ export function AttendanceLive({
           {autoClosed || now === null || closesAtMs === null ? null : (
             <span className="font-mono text-[11px] text-slate-500">in {countdown(closesAtMs - now)}</span>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              setAutoCloseDraft(istDateTimeInput(new Date(snapshot.closesAt!)));
+              setEditingAutoClose(true);
+            }}
+            className="font-semibold text-navy underline-offset-2 hover:text-gold hover:underline"
+          >
+            Edit
+          </button>
+        </div>
+      ) : null}
+
+      {editingAutoClose ? (
+        <div className="flex flex-wrap items-end gap-2 border-b border-line bg-white px-4 py-3 sm:px-5">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Auto-close (IST)
+            </span>
+            <input
+              type="datetime-local"
+              value={autoCloseDraft}
+              onChange={(event) => setAutoCloseDraft(event.target.value)}
+              className="field focus:field-focus py-2"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={saveAutoClose}
+            disabled={busy}
+            className="min-h-12 rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-navy hover:border-gold hover:text-gold disabled:opacity-60"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => patchMeeting({ closes_at: null }).then(() => setEditingAutoClose(false))}
+            disabled={busy}
+            className="min-h-12 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-600 disabled:opacity-60"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditingAutoClose(false)}
+            className="min-h-12 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:text-navy"
+          >
+            Cancel
+          </button>
         </div>
       ) : null}
 
@@ -307,48 +336,6 @@ export function AttendanceLive({
       </div>
 
       <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
-        <button
-          type="button"
-          onClick={syncToSheets}
-          disabled={syncing}
-          className="min-h-11 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
-        >
-          {syncing ? "Syncing to Google Sheets…" : "Sync attendance to Google Sheets"}
-        </button>
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <label
-              htmlFor="closesAt"
-              className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400"
-            >
-              Auto-close (IST)
-            </label>
-            <input
-              id="closesAt"
-              ref={closeAtRef}
-              type="datetime-local"
-              className="field focus:field-focus py-2"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={saveAutoClose}
-            disabled={busy}
-            className="min-h-12 rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-navy transition hover:border-gold hover:text-gold disabled:opacity-60"
-          >
-            {snapshot.closesAt ? "Extend" : "Set"}
-          </button>
-          {snapshot.closesAt ? (
-            <button
-              type="button"
-              onClick={() => patchMeeting({ closes_at: null })}
-              disabled={busy}
-              className="min-h-12 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 transition hover:text-red-600 disabled:opacity-60"
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
         <p className="text-[11px] text-slate-400">
           {refreshedAt ? `Updated ${formatTime(refreshedAt)}` : "Updating every 3 seconds"}
           {snapshot.closesAt

@@ -16,12 +16,8 @@ export async function generateMetadata({ params }: PageProps<"/attend/[id]">): P
   };
 }
 
-export default async function Page({ params, searchParams }: PageProps<"/attend/[id]">) {
+export default async function Page({ params }: PageProps<"/attend/[id]">) {
   const { id } = await params;
-  const query = await searchParams;
-  const qrToken = typeof query.t === "string" ? query.t : null;
-  const qrSlotValue = typeof query.s === "string" ? Number(query.s) : NaN;
-  const qrSlot = Number.isInteger(qrSlotValue) ? qrSlotValue : null;
   if (!id) notFound();
 
   const meeting = await getPublicMeeting(id);
@@ -49,14 +45,10 @@ export default async function Page({ params, searchParams }: PageProps<"/attend/
                 meetingId={meeting.id}
                 title={meeting.title}
                 requiresLocation={meeting.lat !== null && meeting.lng !== null}
-                qrToken={qrToken}
-                qrSlot={qrSlot}
+                meetingLatitude={meeting.lat}
+                meetingLongitude={meeting.lng}
+                meetingRadius={meeting.radius_m}
               />
-            ) : meetingWindowState(new Date(), meeting.starts_at, meeting.is_open, meeting.closes_at) === "not_started" ? (
-              <div className="flex flex-col gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-4">
-                <p className="text-sm font-semibold text-blue-800">Attendance is not open yet</p>
-                <p className="text-xs text-blue-700">Please return closer to the meeting start time.</p>
-              </div>
             ) : (
               <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
                 <p className="text-sm font-semibold text-amber-800">Attendance is closed</p>

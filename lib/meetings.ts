@@ -12,6 +12,7 @@ export type PublicMeeting = {
   is_open: boolean;
   lat: number | null;
   lng: number | null;
+  radius_m: number;
   closes_at: Date | null;
 };
 
@@ -19,7 +20,7 @@ export type PublicMeeting = {
 export const getPublicMeeting = cache(async (id: string): Promise<PublicMeeting | null> => {
   if (!isUuid(id)) return null;
   const [meeting] = await sql<PublicMeeting[]>`
-    select id, title, starts_at, is_open, lat, lng, closes_at
+    select id, title, starts_at, is_open, lat, lng, radius_m, closes_at
     from public.meetings
     where id = ${id}
   `;
