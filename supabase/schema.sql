@@ -28,7 +28,8 @@ create table if not exists public.attendance (
   marked_at   timestamptz not null default now(),
   lat         double precision,
   lng         double precision,
-  distance_m  double precision
+  distance_m  double precision,
+  accuracy_m  double precision
 );
 
 -- One row per person (case- and whitespace-insensitive) and one per device.

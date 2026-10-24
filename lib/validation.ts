@@ -1,22 +1,5 @@
-import "server-only";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: unknown): value is string {
-  return typeof value === "string" && UUID_RE.test(value);
-}
-
-/**
- * Trim, strip control characters and collapse inner whitespace.
- * Returns "" for anything that is not a non-empty string.
- */
-export function normalizeText(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export { isUuid } from "@/lib/identifiers";
+export { normalizeText } from "@/lib/text";
 
 export function parseStartsAt(value: unknown): Date | null {
   if (typeof value !== "string" || value.trim() === "") return null;

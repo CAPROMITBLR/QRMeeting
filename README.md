@@ -34,7 +34,7 @@ npm run dev
 
 ## Flow
 
-1. `/` — create a meeting: title, date/time, optional venue geofence (AB4/AB5 campus preset, current location, or manual coordinates + radius),
+1. `/` — create a meeting: title, date/time (IST), optional venue geofence (AB4/AB5 campus preset, current location, or manual coordinates + radius),
    optional auto-close time. The server generates the meeting `id` and a 43-character `host_token`.
 2. `/meetings/<id>?key=…` — host view: QR code + PNG download, attendee link, live list (3 s polling) with
    distance from the venue, CSV export, per-row removal, open/close toggle and auto-close controls. Bookmark it.
@@ -44,7 +44,8 @@ npm run dev
 ## Features
 
 - **Geofence** — set venue coordinates and a radius; attendance is rejected unless the device is inside it
-  (haversine, `lib/geo.ts`). Positions with accuracy worse than 100 m are rejected with a retry hint. Meetings
+  (haversine, `lib/geo.ts`). Positions with accuracy worse than 500 m are rejected; readings up to 150 m
+  contribute an uncertainty buffer to the boundary decision. Meetings
   without coordinates skip the check. `attendance` stores `lat`, `lng` and `distance_m` for audit.
 - **Campus locations** — the meeting form includes the MAHE Bengaluru AB4 and AB5 presets. Presets show their
   coordinates and use a 45 m default radius that can be adjusted before creation.
@@ -85,9 +86,10 @@ manual entry remains available if the roster is unavailable.
 | `GET /api/meetings/[id]/export.xlsx?key=` | host key | Styled workbook with summary, department, attendance and faculty-status sheets |
 | `GET /api/meetings/[id]/qr.png?key=` | host key | PNG attachment named `<title-slug>-qr.png` |
 | `DELETE /api/meetings/[id]/attendance/[attendanceId]?key=` | host key | removes one entry |
-| `POST /api/attendance` | none | `{ meetingId, name, collegeId?, deviceId, lat?, lng?, accuracy? }` |
+| `POST /api/attendance` | rotating QR token | `{ meetingId, name, collegeId?, deviceId, lat?, lng?, accuracy?, qrToken, qrSlot }` |
 
-Errors from `POST /api/attendance`: `not_found` (404), `closed` (409, manual or auto), `duplicate_name` /
+Errors from `POST /api/attendance`: `not_found` (404), `not_started` / `closed` (409, including the 10-minute early-entry
+window), `qr_expired` (403), `duplicate_name` /
 `duplicate_device` (409), `outside_range` / `location_required` / `location_inaccurate` (403), `invalid_input`
 (400), `rate_limited` (429 with `Retry-After`), `server_error` (500). Every error carries a `message`.
 
@@ -115,6 +117,12 @@ Errors from `POST /api/attendance`: `not_found` (404), `closed` (409, manual or 
   and unsupported cases inline.
 - Times display in IST (`DISPLAY_TIMEZONE` in `lib/config.ts`). College ID is optional — flip
   `COLLEGE_ID_REQUIRED` in the same file to require it in both the form and the API.
+
+### Attendance verification limits
+
+Browser GPS can be spoofed or replaced by a crafted request. Rotating signed QR tokens and the geofence reduce
+casual sharing and proxy attendance but do not eliminate it. The app has no in-app camera scanner; attendees use
+their phone's camera or QR scanner to open the rotating attendance link.
 
 ## Manual test checklist
 

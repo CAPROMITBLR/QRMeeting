@@ -23,7 +23,13 @@ export function getBaseUrl(request: Request): string {
 }
 
 export function getClientIp(request: Request): string {
+  // The deployment proxy must strip/replace these platform headers; X-Forwarded-For is otherwise untrusted.
+  const platformIp =
+    request.headers.get("x-real-ip") ??
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("true-client-ip");
+  if (platformIp) return platformIp.trim();
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return request.headers.get("x-real-ip") ?? "unknown";
+  if (forwarded) return forwarded.split(",").at(-1)?.trim() || "unknown";
+  return "unknown";
 }

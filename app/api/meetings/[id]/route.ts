@@ -1,4 +1,5 @@
 import { apiError, json } from "@/lib/http";
+import { MEETING_DURATION_MAX_MINUTES } from "@/lib/config";
 import { sql } from "@/lib/db";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
 import { firstIssueMessage, updateMeetingSchema } from "@/lib/schemas";
@@ -35,13 +36,24 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/meetings/[
   }
 
   try {
-    const [meeting] = await sql<{ host_token: string; is_open: boolean; closes_at: Date | null }[]>`
-      select host_token, is_open, closes_at from public.meetings where id = ${id}
+    const [meeting] = await sql<{ host_token: string; is_open: boolean; starts_at: Date; closes_at: Date | null }[]>`
+      select host_token, is_open, starts_at, closes_at from public.meetings where id = ${id}
     `;
 
     // Missing meeting and wrong key answer identically: no meeting-id probing.
     if (!meeting || !hostKeyMatches(readHostKey(request.url), meeting.host_token)) {
       return apiError(403, "forbidden", "This host link is not valid.");
+    }
+    if (
+      nextClosesAt &&
+      (nextClosesAt.getTime() <= meeting.starts_at.getTime() ||
+        nextClosesAt.getTime() > meeting.starts_at.getTime() + MEETING_DURATION_MAX_MINUTES * 60_000)
+    ) {
+      return apiError(
+        400,
+        "invalid_input",
+        `Auto-close must be after the meeting start and within ${MEETING_DURATION_MAX_MINUTES} minutes of it.`,
+      );
     }
 
     const nextIsOpen = typeof is_open === "boolean" ? is_open : meeting.is_open;

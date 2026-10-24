@@ -321,7 +321,7 @@ export function AttendanceLive({
               htmlFor="closesAt"
               className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400"
             >
-              Auto-close
+              Auto-close (IST)
             </label>
             <input
               id="closesAt"

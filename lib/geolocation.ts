@@ -31,25 +31,67 @@ export function requestPosition(options?: {
     return Promise.reject(new GeolocationError("unsupported", MESSAGES.unsupported));
   }
 
+  const timeoutMs = options?.timeoutMs ?? 15_000;
+  const getOptions: PositionOptions = {
+    enableHighAccuracy: true,
+    timeout: timeoutMs,
+    maximumAge: 0,
+  };
+
+  function toCoordinates(position: GeolocationPosition): Coordinates {
+    return {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    };
+  }
+
+  function failureCode(error: GeolocationPositionError): GeolocationFailureCode {
+    return error.code === 1 ? "denied" : error.code === 3 ? "timeout" : "unavailable";
+  }
+
+  function retryWithWatch(initialFailure: GeolocationError | null, initial: Coordinates | null): Promise<Coordinates> {
+    return new Promise((resolve, reject) => {
+      let best = initial;
+      let watchId: number | null = null;
+      const finish = (result?: Coordinates, failure?: GeolocationError) => {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        window.clearTimeout(timer);
+        if (result) resolve(result);
+        else reject(failure ?? initialFailure ?? new GeolocationError("timeout", MESSAGES.timeout));
+      };
+      const timer = window.setTimeout(() => finish(best ?? undefined), 10_000);
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const current = toCoordinates(position);
+          if (!best || current.accuracy < best.accuracy) best = current;
+          if (current.accuracy <= 100) finish(current);
+        },
+        (error) => finish(best ?? undefined, best ? undefined : new GeolocationError(failureCode(error), MESSAGES[failureCode(error)])),
+        getOptions,
+      );
+    });
+  }
+
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        resolve({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
+        const coordinates = toCoordinates(position);
+        if (coordinates.accuracy <= 100) {
+          resolve(coordinates);
+        } else {
+          retryWithWatch(null, coordinates).then(resolve, reject);
+        }
       },
       (error) => {
-        const code: GeolocationFailureCode =
-          error.code === 1 ? "denied" : error.code === 3 ? "timeout" : "unavailable";
-        reject(new GeolocationError(code, MESSAGES[code]));
+        const failure = new GeolocationError(failureCode(error), MESSAGES[failureCode(error)]);
+        if (failure.code === "timeout") {
+          retryWithWatch(failure, null).then(resolve, reject);
+        } else {
+          reject(failure);
+        }
       },
-      {
-        enableHighAccuracy: options?.highAccuracy ?? false,
-        timeout: options?.timeoutMs ?? 15_000,
-        maximumAge: options?.maximumAgeMs ?? 30_000,
-      },
+      getOptions,
     );
   });
 }

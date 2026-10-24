@@ -1,5 +1,3 @@
-import "server-only";
-
 import { z } from "zod";
 
 import {
@@ -79,6 +77,12 @@ export const createMeetingSchema = z
           path: ["closesAt"],
           message: "Auto-close must be after the meeting start.",
         });
+      } else if (startsAt && closesAt.getTime() > startsAt.getTime() + MEETING_DURATION_MAX_MINUTES * 60_000) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["closesAt"],
+          message: `Auto-close must be within ${MEETING_DURATION_MAX_MINUTES} minutes of the meeting start.`,
+        });
       }
     }
   });
@@ -105,12 +109,34 @@ export const attendanceSchema = z.object({
   lat: latitude.nullish(),
   lng: longitude.nullish(),
   accuracy: z.number().min(0).max(MAX_MEANINGFUL_ACCURACY_M).nullish(),
+  qrToken: z.string().min(1).nullish(),
+  qrSlot: z.number().int().nonnegative().nullish(),
+}).superRefine((value, ctx) => {
+  const hasLat = typeof value.lat === "number";
+  const hasLng = typeof value.lng === "number";
+  if (hasLat !== hasLng) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["lat"],
+      message: "Provide both latitude and longitude, or neither.",
+    });
+  }
 });
 
-export const updateMeetingSchema = z.object({
-  is_open: z.boolean().optional(),
-  closes_at: z.union([z.string(), z.null()]).optional(),
-});
+export const updateMeetingSchema = z
+  .object({
+    is_open: z.boolean().optional(),
+    closes_at: z.union([z.string(), z.null()]).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (typeof value.closes_at === "string" && value.closes_at !== "" && !parseStartsAt(value.closes_at)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["closes_at"],
+        message: "Auto-close must be a valid date and time.",
+      });
+    }
+  });
 
 export function firstIssueMessage(error: z.ZodError): { field: string; message: string } {
   const issue = error.issues[0];

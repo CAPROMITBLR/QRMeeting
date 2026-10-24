@@ -20,7 +20,10 @@ export async function GET() {
     const body: unknown = await response.json();
     if (!Array.isArray(body)) return apiError(502, "roster_failed", "The faculty roster has an invalid format.");
 
-    const members = body.filter(isFacultyMember).slice(0, 2_000);
+    const members = body
+      .filter(isFacultyMember)
+      .slice(0, 2_000)
+      .map((member) => ({ facultyId: member.facultyId, name: member.name }));
     return json({ members }, { headers: { "cache-control": "private, max-age=300" } });
   } catch (error) {
     console.error("faculty roster failed", error);

@@ -12,13 +12,14 @@ export type PublicMeeting = {
   is_open: boolean;
   lat: number | null;
   lng: number | null;
+  closes_at: Date | null;
 };
 
 /** Public columns only: never host_token. Cached per request via React's cache. */
 export const getPublicMeeting = cache(async (id: string): Promise<PublicMeeting | null> => {
   if (!isUuid(id)) return null;
   const [meeting] = await sql<PublicMeeting[]>`
-    select id, title, starts_at, is_open, lat, lng
+    select id, title, starts_at, is_open, lat, lng, closes_at
     from public.meetings
     where id = ${id}
   `;

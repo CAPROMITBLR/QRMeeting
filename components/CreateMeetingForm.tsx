@@ -7,10 +7,10 @@ import { DEFAULT_RADIUS_M } from "@/lib/config";
 import { GeolocationError, requestPosition } from "@/lib/geolocation";
 import { saveHostLink } from "@/lib/host-links";
 import { LOCATION_PRESETS } from "@/lib/locations";
+import { istDateTimeInput, parseIstDateTime } from "@/lib/timezone";
 
 function localDateTimeInput(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return istDateTimeInput(date);
 }
 
 export function CreateMeetingForm() {
@@ -43,7 +43,7 @@ export function CreateMeetingForm() {
       setLat(position.lat.toFixed(6));
       setLng(position.lng.toFixed(6));
       setSelectedPreset(null);
-      setLocationNote(`Using your current position (±${Math.round(position.accuracy)} m).`);
+      setLocationNote(`Saved venue point from your current position (GPS accuracy ±${Math.round(position.accuracy)} m).`);
     } catch (failure) {
       setError(
         failure instanceof GeolocationError
@@ -108,7 +108,9 @@ export function CreateMeetingForm() {
       return;
     }
 
-    if (closesAt && startsAt && new Date(closesAt).getTime() <= new Date(startsAt).getTime()) {
+    const startsAtDate = parseIstDateTime(startsAt);
+    const closesAtDate = closesAt ? parseIstDateTime(closesAt) : null;
+    if (closesAt && startsAtDate && closesAtDate && closesAtDate.getTime() <= startsAtDate.getTime()) {
       setError("Auto-close must be after the meeting start.");
       setPending(false);
       return;
@@ -120,11 +122,11 @@ export function CreateMeetingForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           title,
-          startsAt: startsAt ? new Date(startsAt).toISOString() : "",
+          startsAt: parseIstDateTime(startsAt)?.toISOString() ?? "",
           lat: latNumber,
           lng: lngNumber,
           radiusM: Number.isFinite(radiusNumber) ? radiusNumber : DEFAULT_RADIUS_M,
-          closesAt: closesAt ? new Date(closesAt).toISOString() : null,
+          closesAt: closesAt ? parseIstDateTime(closesAt)?.toISOString() ?? null : null,
           durationMinutes: durationMinutes ? Number(durationMinutes) : null,
         }),
       });
@@ -139,7 +141,7 @@ export function CreateMeetingForm() {
         id: data.id,
         title: title.trim(),
         key: data.hostToken,
-        startsAt: startsAt ? new Date(startsAt).toISOString() : new Date().toISOString(),
+        startsAt: parseIstDateTime(startsAt)?.toISOString() ?? new Date().toISOString(),
       });
       router.push(`/meetings/${data.id}?key=${encodeURIComponent(data.hostToken)}`);
     } catch {
@@ -191,7 +193,7 @@ export function CreateMeetingForm() {
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="startsAt" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-          Date and time
+          Date and time (IST)
         </label>
         <input
           id="startsAt"
@@ -205,7 +207,7 @@ export function CreateMeetingForm() {
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="closesAt" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-          Auto-close at <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>
+          Auto-close at (IST) <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>
         </label>
         <input
           id="closesAt"

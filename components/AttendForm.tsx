@@ -41,10 +41,14 @@ export function AttendForm({
   meetingId,
   title,
   requiresLocation,
+  qrToken,
+  qrSlot,
 }: {
   meetingId: string;
   title: string;
   requiresLocation: boolean;
+  qrToken: string | null;
+  qrSlot: number | null;
 }) {
   const [name, setName] = useState("");
   const [collegeId, setCollegeId] = useState("");
@@ -82,8 +86,13 @@ export function AttendForm({
 
     let coordinates: Coordinates | null = null;
     if (requiresLocation) {
+      if (!window.isSecureContext) {
+        setError("Location access needs HTTPS. Open this attendance link over a secure HTTPS connection.");
+        setPending(false);
+        return;
+      }
       try {
-        coordinates = await requestPosition({ highAccuracy: true, timeoutMs: 15_000, maximumAgeMs: 30_000 });
+        coordinates = await requestPosition();
       } catch (failure) {
         setError(
           failure instanceof GeolocationError
@@ -105,6 +114,8 @@ export function AttendForm({
           collegeId,
           department,
           deviceId: readOrCreateDeviceId(),
+          qrToken,
+          qrSlot,
           lat: coordinates?.lat ?? null,
           lng: coordinates?.lng ?? null,
           accuracy: coordinates?.accuracy ?? null,
@@ -115,10 +126,19 @@ export function AttendForm({
         name?: string;
         markedAt?: string;
         message?: string;
+        distance_m?: number;
+        accuracy_m?: number | null;
+        radius_m?: number;
       };
 
       if (!response.ok) {
-        setError(data.message ?? "Could not mark attendance. Please try again.");
+        const diagnostic =
+          typeof data.distance_m === "number"
+            ? ` (${data.distance_m} m away, allowed ${data.radius_m ?? "?"} m${
+                typeof data.accuracy_m === "number" ? `, GPS accuracy ${data.accuracy_m} m` : ""
+              })`
+            : "";
+        setError(`${data.message ?? "Could not mark attendance. Please try again."}${diagnostic}`);
         return;
       }
 
