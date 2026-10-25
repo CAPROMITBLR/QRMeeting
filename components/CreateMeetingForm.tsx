@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { DEFAULT_RADIUS_M } from "@/lib/config";
 import { GeolocationError, requestPosition } from "@/lib/geolocation";
-import { saveHostLink } from "@/lib/host-links";
 import { LOCATION_PRESETS } from "@/lib/locations";
 import { istDateTimeInput, parseIstDateTime } from "@/lib/timezone";
 
@@ -17,12 +16,10 @@ function todayIst(): string {
   return localDateTimeInput(new Date()).split("T")[0] ?? "";
 }
 
-export function CreateMeetingForm() {
+export function CreateMeetingForm({ hostName }: { hostName: string }) {
   const router = useRouter();
   const startsAtDateRef = useRef<HTMLInputElement>(null);
   const startsAtTimeRef = useRef<HTMLInputElement>(null);
-  const closesAtDateRef = useRef<HTMLInputElement>(null);
-  const closesAtTimeRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
@@ -30,8 +27,6 @@ export function CreateMeetingForm() {
   const [durationMinutes, setDurationMinutes] = useState("");
   const [startsAtDate, setStartsAtDate] = useState("");
   const [startsAtTime, setStartsAtTime] = useState("");
-  const [closesAtDate, setClosesAtDate] = useState("");
-  const [closesAtTime, setClosesAtTime] = useState("");
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -120,13 +115,6 @@ export function CreateMeetingForm() {
     }
 
     const radiusNumber = Number(radius);
-    const closesAt = closesAtDate && closesAtTime ? `${closesAtDate}T${closesAtTime}` : "";
-
-    if (closesAt && durationMinutes) {
-      setError("Choose either a duration or a specific auto-close time, not both.");
-      setPending(false);
-      return;
-    }
 
     try {
       const response = await fetch("/api/meetings", {
@@ -138,7 +126,6 @@ export function CreateMeetingForm() {
           lat: latNumber,
           lng: lngNumber,
           radiusM: Number.isFinite(radiusNumber) ? radiusNumber : DEFAULT_RADIUS_M,
-          closesAt: closesAt ? parseIstDateTime(closesAt)?.toISOString() ?? null : null,
           durationMinutes: durationMinutes ? Number(durationMinutes) : null,
         }),
       });
@@ -149,12 +136,6 @@ export function CreateMeetingForm() {
         return;
       }
 
-      saveHostLink({
-        id: data.id,
-        title: title.trim(),
-        key: data.hostToken,
-        startsAt: parseIstDateTime(startsAt)?.toISOString() ?? new Date().toISOString(),
-      });
       router.push(`/meetings/${data.id}?key=${encodeURIComponent(data.hostToken)}`);
     } catch {
       setError("Network error. Please try again.");
@@ -183,7 +164,8 @@ export function CreateMeetingForm() {
           <option value="180">3 hours</option>
         </select>
         <p className="text-[11px] text-slate-400">
-          The QR remains usable until this duration ends. Use the field below instead for a custom deadline.
+          Attendance and the QR close automatically when this duration ends. Leave it empty to close attendance
+          manually from the host page.
         </p>
       </div>
 
@@ -216,14 +198,7 @@ export function CreateMeetingForm() {
             min={today}
             required
             value={startsAtDate}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStartsAtDate(value);
-              if (closesAtDate && value > closesAtDate) {
-                setClosesAtDate("");
-                setClosesAtTime("");
-              }
-            }}
+            onChange={(event) => setStartsAtDate(event.target.value)}
             className="field focus:field-focus"
           />
           <input
@@ -233,60 +208,10 @@ export function CreateMeetingForm() {
             type="time"
             required
             value={startsAtTime}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStartsAtTime(value);
-              if (closesAtDate === startsAtDate && closesAtTime && value >= closesAtTime) {
-                setClosesAtDate("");
-                setClosesAtTime("");
-              }
-            }}
+            onChange={(event) => setStartsAtTime(event.target.value)}
             className="field focus:field-focus"
           />
         </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="closesAt" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-          Auto-close at (IST) <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <input
-            id="closesAtDate"
-            name="closesAtDate"
-            ref={closesAtDateRef}
-            type="date"
-            min={startsAtDate || undefined}
-            value={closesAtDate}
-            onChange={(event) => setClosesAtDate(event.target.value)}
-            className="field focus:field-focus"
-          />
-          <input
-            id="closesAtTime"
-            name="closesAtTime"
-            ref={closesAtTimeRef}
-            type="time"
-            min={closesAtDate === startsAtDate ? startsAtTime : undefined}
-            value={closesAtTime}
-            onChange={(event) => setClosesAtTime(event.target.value)}
-            className="field focus:field-focus"
-          />
-        </div>
-        {closesAtDate || closesAtTime ? (
-          <button
-            type="button"
-            onClick={() => {
-              setClosesAtDate("");
-              setClosesAtTime("");
-            }}
-            className="self-start text-xs font-semibold text-slate-500 hover:text-red-600"
-          >
-            Clear auto-close
-          </button>
-        ) : null}
-        <p className="text-[11px] text-slate-400">
-          Leave empty to close attendance manually. You can change this later from the host page.
-        </p>
       </div>
 
       <fieldset className="flex flex-col gap-2 rounded-xl border border-line bg-cream/60 p-3">
@@ -420,7 +345,7 @@ export function CreateMeetingForm() {
       </button>
 
       <p className="text-center text-xs text-slate-400">
-        You&apos;ll get a private host link with the QR code. Bookmark it.
+        Saved to {hostName}&apos;s meetings, so you can open it from any device.
       </p>
     </form>
   );

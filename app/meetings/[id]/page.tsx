@@ -2,16 +2,16 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
-import { AttendanceLive, type Attendee } from "@/components/AttendanceLive";
+import { AttendanceLive, type Attendee, type JoinRequest } from "@/components/AttendanceLive";
 import { Brand } from "@/components/Brand";
 import { CopyButton } from "@/components/CopyButton";
-import { RememberHostLink } from "@/components/RememberHostLink";
 import { QrCountdown } from "@/components/QrCountdown";
 import { requestOrigin } from "@/lib/base-url";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { hostKeyMatches } from "@/lib/host-key";
 import { attendeeUrl } from "@/lib/qr";
+import { realtimeConfig } from "@/lib/realtime";
 import { isUuid } from "@/lib/validation";
 
 export const metadata: Metadata = {
@@ -56,8 +56,9 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
     department: string | null;
     marked_at: Date;
     distance_m: number | null;
+    manual_approval: boolean;
   }[]>`
-    select id, name, college_id, department, marked_at, distance_m
+    select id, name, college_id, department, marked_at, distance_m, manual_approval
     from public.attendance
     where meeting_id = ${id}
     order by marked_at asc
@@ -70,6 +71,34 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
     department: row.department,
     markedAt: row.marked_at.toISOString(),
     distanceM: row.distance_m,
+    manualApproval: row.manual_approval,
+  }));
+
+  const requestRows = await sql<{
+    id: string;
+    name: string;
+    college_id: string | null;
+    department: string | null;
+    distance_m: number | null;
+    accuracy_m: number | null;
+    reason: string;
+    created_at: Date;
+  }[]>`
+    select id, name, college_id, department, distance_m, accuracy_m, reason, created_at
+    from public.join_requests
+    where meeting_id = ${id} and status = 'pending'
+    order by created_at asc
+  `;
+
+  const requests: JoinRequest[] = requestRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    collegeId: row.college_id,
+    department: row.department,
+    distanceM: row.distance_m,
+    accuracyM: row.accuracy_m,
+    reason: row.reason,
+    createdAt: row.created_at.toISOString(),
   }));
 
   const origin = await requestOrigin();
@@ -82,17 +111,12 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
   return (
     <div className="bg-dot flex min-h-screen flex-col">
       <div className="h-1 w-full bg-gradient-to-r from-gold to-navy" />
-      <RememberHostLink
-        id={meeting.id}
-        title={meeting.title}
-        hostKey={hostKey}
-        startsAt={meeting.starts_at.toISOString()}
-      />
+
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:gap-5 sm:px-5 sm:py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <Brand subtitle="Host view" />
-        <Link href="/" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-gold hover:text-gold">
-          ← Back to meetings
+        <Link href="/meetings" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-gold hover:text-gold">
+          ← All my meetings
         </Link>
       </div>
 
@@ -159,12 +183,14 @@ export default async function Page({ params, searchParams }: PageProps<"/meeting
         <AttendanceLive
           meetingId={meeting.id}
           hostKey={hostKey}
+          realtime={realtimeConfig()}
           initial={{
             isOpen: meeting.is_open && !autoClosed,
             autoClosed,
             closesAt: meeting.closes_at ? meeting.closes_at.toISOString() : null,
             count: attendees.length,
             attendees,
+            requests,
           }}
         />
       </div>

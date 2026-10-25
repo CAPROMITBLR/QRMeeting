@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ATTENDANCE_POLL_MS } from "@/lib/config";
+import { ATTENDANCE_POLL_MS, ATTENDANCE_RECONCILE_MS } from "@/lib/config";
 import { formatClock, formatTime } from "@/lib/format";
+import type { RealtimeConfig } from "@/lib/realtime";
+import { subscribeToMeetingChange, type HostConnectionState } from "@/lib/realtime-client";
 import { istDateTimeInput, parseIstDateTime } from "@/lib/timezone";
 
 export type Attendee = {
@@ -13,6 +15,19 @@ export type Attendee = {
   department: string | null;
   markedAt: string;
   distanceM: number | null;
+  manualApproval?: boolean;
+};
+
+/** A geofence failure the host can approve or reject. */
+export type JoinRequest = {
+  id: string;
+  name: string;
+  collegeId: string | null;
+  department: string | null;
+  distanceM: number | null;
+  accuracyM: number | null;
+  reason: string;
+  createdAt: string;
 };
 
 type Snapshot = {
@@ -21,7 +36,21 @@ type Snapshot = {
   closesAt: string | null;
   count: number;
   attendees: Attendee[];
+  requests: JoinRequest[];
 };
+
+function describeRequest(request: JoinRequest): string {
+  const parts: string[] = [];
+  if (typeof request.distanceM === "number") parts.push(`${Math.round(request.distanceM)} m from the venue`);
+  if (request.reason === "location_inaccurate" && typeof request.accuracyM === "number") {
+    parts.push(`GPS accuracy ±${Math.round(request.accuracyM)} m`);
+  } else if (request.reason === "location_required") {
+    parts.push("location not shared");
+  }
+  if (request.department) parts.push(request.department);
+  parts.push(formatTime(request.createdAt));
+  return parts.join(" · ");
+}
 
 function countdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -37,20 +66,25 @@ export function AttendanceLive({
   meetingId,
   hostKey,
   initial,
+  realtime,
 }: {
   meetingId: string;
   hostKey: string;
   initial: Snapshot;
+  realtime: RealtimeConfig | null;
 }) {
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const [editingAutoClose, setEditingAutoClose] = useState(false);
   const [autoCloseDraft, setAutoCloseDraft] = useState("");
+  const [connection, setConnection] = useState<HostConnectionState>(realtime ? "connecting" : "offline");
   const refreshInFlightRef = useRef(false);
+  const refreshSoonRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -85,10 +119,37 @@ export function AttendanceLive({
     }
   }, [meetingId, hostKey]);
 
+  // Collapse bursts (a host approving five requests) into one refetch.
+  const refreshSoon = useCallback(() => {
+    if (refreshSoonRef.current !== null) return;
+    refreshSoonRef.current = window.setTimeout(() => {
+      refreshSoonRef.current = null;
+      void refresh();
+    }, 150);
+  }, [refresh]);
+
   useEffect(() => {
+    if (!realtime) return;
+    return subscribeToMeetingChange({
+      url: realtime.url,
+      key: realtime.key,
+      meetingId,
+      onChange: refreshSoon,
+      onState: (state) => {
+        setConnection(state);
+        // Pick up anything that changed while the socket was connecting.
+        if (state === "live") refreshSoon();
+      },
+    });
+  }, [meetingId, realtime, refreshSoon]);
+
+  useEffect(() => {
+    // Realtime pushes changes; this timer reconciles, and carries the page on
+    // its own when the socket is unavailable.
+    const intervalMs = connection === "live" ? ATTENDANCE_RECONCILE_MS : ATTENDANCE_POLL_MS;
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, ATTENDANCE_POLL_MS);
+    }, intervalMs);
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refresh();
@@ -99,8 +160,12 @@ export function AttendanceLive({
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
       abortRef.current?.abort();
+      if (refreshSoonRef.current !== null) {
+        window.clearTimeout(refreshSoonRef.current);
+        refreshSoonRef.current = null;
+      }
     };
-  }, [refresh]);
+  }, [refresh, connection]);
 
   const closesAtMs = snapshot.closesAt ? Date.parse(snapshot.closesAt) : null;
   // The server flag covers first paint; the tick flips the UI the moment the deadline passes.
@@ -155,6 +220,36 @@ export function AttendanceLive({
       return;
     }
     if (await patchMeeting({ closes_at: parsed.toISOString() })) setEditingAutoClose(false);
+  }
+
+  async function decideRequest(request: JoinRequest, action: "approve" | "reject") {
+    setDecidingId(request.id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/meetings/${meetingId}/join-requests/${request.id}?key=${encodeURIComponent(hostKey)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action }),
+        },
+      );
+      const data = (await response.json()) as { status?: string; message?: string };
+      if (!response.ok) {
+        setError(data.message ?? "Could not update this request.");
+        return;
+      }
+
+      setSnapshot((current) => ({
+        ...current,
+        requests: current.requests.filter((item) => item.id !== request.id),
+      }));
+      if (action === "approve") await refresh();
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setDecidingId(null);
+    }
   }
 
   async function removeAttendee(attendee: Attendee) {
@@ -282,6 +377,55 @@ export function AttendanceLive({
         </p>
       ) : null}
 
+      {snapshot.requests.length > 0 ? (
+        <section className="border-b border-gold/30 bg-gold/5 px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-dark">
+              Join requests ({snapshot.requests.length})
+            </h3>
+            <span className="text-[11px] text-slate-500">
+              Geofence not met — approve only if you can see them
+            </span>
+          </div>
+          <ul className="mt-2 flex flex-col gap-2">
+            {snapshot.requests.map((request) => (
+              <li
+                key={request.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-navy">
+                    {request.name}
+                    {request.collegeId ? (
+                      <span className="ml-2 text-xs font-normal text-slate-400">{request.collegeId}</span>
+                    ) : null}
+                  </p>
+                  <p className="text-[11px] text-slate-500">{describeRequest(request)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => decideRequest(request, "approve")}
+                    disabled={decidingId === request.id}
+                    className="min-h-10 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    {decidingId === request.id ? "Saving…" : "Approve"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => decideRequest(request, "reject")}
+                    disabled={decidingId === request.id}
+                    className="min-h-10 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <div className="min-h-[16rem] flex-1 overflow-auto">
         {snapshot.attendees.length === 0 ? (
           <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 px-6 text-center">
@@ -308,7 +452,14 @@ export function AttendanceLive({
               {snapshot.attendees.map((attendee, index) => (
                 <tr key={attendee.id} className="border-t border-line/70">
                   <td className="px-4 py-2.5 text-xs text-slate-400 sm:px-5">{index + 1}</td>
-                  <td className="px-2 py-2.5 font-medium text-navy">{attendee.name}</td>
+                  <td className="px-2 py-2.5 font-medium text-navy">
+                    {attendee.name}
+                    {attendee.manualApproval ? (
+                      <span className="ml-1.5 rounded bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-gold-dark">
+                        approved
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.collegeId ?? "—"}</td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.department ?? "—"}</td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">
@@ -337,7 +488,11 @@ export function AttendanceLive({
 
       <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
         <p className="text-[11px] text-slate-400">
-          {refreshedAt ? `Updated ${formatTime(refreshedAt)}` : "Updating every 3 seconds"}
+          {connection === "live"
+            ? `Live · updated ${refreshedAt ? formatTime(refreshedAt) : "just now"}`
+            : refreshedAt
+              ? `Updated ${formatTime(refreshedAt)} · checking every ${ATTENDANCE_POLL_MS / 1000} s`
+              : `Checking every ${ATTENDANCE_POLL_MS / 1000} s`}
           {snapshot.closesAt
             ? autoClosed
               ? " · auto-close passed"

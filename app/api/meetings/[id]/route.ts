@@ -1,7 +1,10 @@
+import { after } from "next/server";
+
 import { apiError, json } from "@/lib/http";
 import { MEETING_DURATION_MAX_MINUTES } from "@/lib/config";
 import { sql } from "@/lib/db";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
+import { notifyMeetingChanged } from "@/lib/realtime";
 import { firstIssueMessage, updateMeetingSchema } from "@/lib/schemas";
 import { isUuid, parseStartsAt } from "@/lib/validation";
 
@@ -66,6 +69,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/meetings/[
       returning is_open, closes_at
     `;
 
+    after(() => notifyMeetingChanged(id, "meeting"));
     return json({ isOpen: updated.is_open, closesAt: updated.closes_at });
   } catch (error) {
     console.error("toggle meeting failed", error);

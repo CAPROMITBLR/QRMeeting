@@ -20,7 +20,11 @@ export const MAX_MEANINGFUL_ACCURACY_M = 100_000;
 /** Rate limits (per client IP, per server instance). */
 export const ATTENDANCE_RATE_LIMIT = 10;
 export const MEETINGS_RATE_LIMIT = 5;
+export const HOST_AUTH_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
 
-/** Host page polling interval. */
+/** Host page polling interval (also the fallback when realtime is unavailable). */
 export const ATTENDANCE_POLL_MS = 3_000;
+
+/** How often the host page refetches while realtime pushes are flowing. */
+export const ATTENDANCE_RECONCILE_MS = 30_000;

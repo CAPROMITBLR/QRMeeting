@@ -1,6 +1,9 @@
+import { after } from "next/server";
+
 import { apiError, json } from "@/lib/http";
 import { sql } from "@/lib/db";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
+import { notifyMeetingChanged } from "@/lib/realtime";
 import { isUuid } from "@/lib/validation";
 
 export async function DELETE(
@@ -29,6 +32,7 @@ export async function DELETE(
 
     if (!deleted) return apiError(404, "not_found", "That entry no longer exists.");
 
+    after(() => notifyMeetingChanged(id, "attendance"));
     return json({ ok: true, id: deleted.id });
   } catch (error) {
     console.error("delete attendance failed", error);

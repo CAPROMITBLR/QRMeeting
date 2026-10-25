@@ -2,6 +2,7 @@ import { apiError, json } from "@/lib/http";
 import { DEFAULT_RADIUS_M } from "@/lib/config";
 import { sql } from "@/lib/db";
 import { generateHostKey } from "@/lib/host-key";
+import { getHost } from "@/lib/host-session";
 import { meetingRateLimiter } from "@/lib/rate-limit";
 import { createMeetingSchema, firstIssueMessage } from "@/lib/schemas";
 import { parseStartsAt } from "@/lib/validation";
@@ -33,10 +34,13 @@ export async function POST(request: Request) {
   }
 
   const hostToken = generateHostKey();
+  // Meetings created while signed in belong to the host account, so they show
+  // up under "Your meetings" on every device instead of only in this browser.
+  const host = await getHost();
 
   try {
     const [meeting] = await sql<{ id: string }[]>`
-      insert into public.meetings (title, host_token, starts_at, lat, lng, radius_m, closes_at)
+      insert into public.meetings (title, host_token, starts_at, lat, lng, radius_m, closes_at, host_id)
       values (
         ${title},
         ${hostToken},
@@ -44,7 +48,8 @@ export async function POST(request: Request) {
         ${typeof lat === "number" ? lat : null},
         ${typeof lng === "number" ? lng : null},
         ${radiusM ?? DEFAULT_RADIUS_M},
-        ${closesAtDate ? closesAtDate.toISOString() : null}
+        ${closesAtDate ? closesAtDate.toISOString() : null},
+        ${host?.id ?? null}
       )
       returning id
     `;

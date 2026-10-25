@@ -87,7 +87,7 @@ export const createMeetingSchema = z
     }
   });
 
-export const attendanceSchema = z.object({
+const attendanceFields = z.object({
   meetingId: z.string().refine(isUuid, { message: "This meeting does not exist." }),
   name: cleanedText(NAME_MAX_LENGTH, "Full name"),
   collegeId: z
@@ -109,7 +109,9 @@ export const attendanceSchema = z.object({
   lat: latitude.nullish(),
   lng: longitude.nullish(),
   accuracy: z.number().min(0).max(MAX_MEANINGFUL_ACCURACY_M).nullish(),
-}).superRefine((value, ctx) => {
+});
+
+function requireBothCoordinates(value: { lat?: number | null; lng?: number | null }, ctx: z.RefinementCtx) {
   const hasLat = typeof value.lat === "number";
   const hasLng = typeof value.lng === "number";
   if (hasLat !== hasLng) {
@@ -119,6 +121,45 @@ export const attendanceSchema = z.object({
       message: "Provide both latitude and longitude, or neither.",
     });
   }
+}
+
+export const attendanceSchema = attendanceFields.superRefine(requireBothCoordinates);
+
+/** A geofence rejection the attendee turns into a request the host can act on. */
+export const JOIN_REQUEST_REASONS = ["outside_range", "location_inaccurate", "location_required"] as const;
+
+export const joinRequestSchema = attendanceFields
+  .extend({
+    reason: z.enum(JOIN_REQUEST_REASONS).default("outside_range"),
+  })
+  .superRefine(requireBothCoordinates);
+
+export const decisionSchema = z.object({
+  action: z.enum(["approve", "reject"]),
+});
+
+export const hostCredentialsSchema = z.object({
+  name: z
+    .string()
+    .transform((value) => normalizeText(value))
+    .refine((value) => value.length >= 2, { message: "Enter the name you want to sign in with." })
+    .refine((value) => value.length <= 60, { message: "Host name must be 60 characters or fewer." }),
+  passphrase: z
+    .string()
+    .min(8, { message: "Your passphrase needs at least 8 characters." })
+    .max(200, { message: "Your passphrase is too long." }),
+  mode: z.enum(["signin", "signup"]).default("signin"),
+});
+
+export const claimMeetingsSchema = z.object({
+  meetings: z
+    .array(
+      z.object({
+        id: z.string().refine(isUuid, { message: "A saved meeting id is not valid." }),
+        key: z.string().min(20).max(200),
+      }),
+    )
+    .max(50),
 });
 
 export const updateMeetingSchema = z

@@ -1,6 +1,9 @@
+import { after } from "next/server";
+
 import { apiError, json } from "@/lib/http";
 import { sql } from "@/lib/db";
 import { decideGeofence } from "@/lib/geo";
+import { notifyMeetingChanged } from "@/lib/realtime";
 import { attendanceRateLimiter } from "@/lib/rate-limit";
 import { attendanceSchema, firstIssueMessage } from "@/lib/schemas";
 import { meetingWindowState } from "@/lib/time-window";
@@ -23,6 +26,9 @@ export async function POST(request: Request) {
   }
 
   const { meetingId, name, collegeId, department, deviceId, lat, lng, accuracy } = parsed.data;
+  // Tracks whether the geofence check itself passed, so a later database error
+  // can tell the attendee their location was not the problem.
+  let locationVerified = false;
 
   try {
     const [meeting] = await sql<{
@@ -90,7 +96,8 @@ export async function POST(request: Request) {
           return json(
             {
               error: "location_inaccurate",
-              message: `Your GPS accuracy is about ${Math.round(accuracy ?? 0)} m; it must be 500 m or better. Move outside or near a window and try again.`,
+              message: `Your phone reported a GPS accuracy of about ${Math.round(accuracy ?? 0)} m, which is too vague to confirm the venue. If you are on site, request to join and the host can approve you.`,
+              can_request_join: true,
               ...details,
             },
             { status: 403 },
@@ -99,12 +106,16 @@ export async function POST(request: Request) {
         return json(
           {
             error: "outside_range",
-            message: `You are ~${Math.round(decision.distanceM)} m away (allowed ${meeting.radius_m} m${accuracyText}). Move closer and try again.`,
+            message: `You are ~${Math.round(decision.distanceM)} m from the venue (allowed ${meeting.radius_m} m${accuracyText}). If you are actually in the room, the venue pin or your GPS reading is off — request to join and the host can approve you.`,
+            can_request_join: true,
             ...details,
           },
           { status: 403 },
         );
       }
+
+      // Reached only when the geofence accepted this position.
+      locationVerified = true;
     }
 
     const [row] = await sql<{ marked_at: Date }[]>`
@@ -156,6 +167,9 @@ export async function POST(request: Request) {
       return apiError(409, "closed", "Attendance could not be marked because the meeting changed state. Please try again.");
     }
 
+    // After the response: tell the host page to refetch (no attendee data on the wire).
+    after(() => notifyMeetingChanged(meetingId, "attendance"));
+
     return json(
       {
         ok: true,
@@ -167,9 +181,35 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return apiError(409, "duplicate", "Attendance has already been marked for this meeting.");
+      // Say which of the two limits was hit: one mark per person, one per device.
+      let duplicateDevice = false;
+      try {
+        const [existing] = await sql<{ device_id: string }[]>`
+          select device_id
+          from public.attendance
+          where meeting_id = ${meetingId}
+            and (lower(btrim(name)) = ${name.toLowerCase()} or device_id = ${deviceId})
+          limit 1
+        `;
+        duplicateDevice = existing?.device_id === deviceId;
+      } catch {
+        // Fall through to the name-based message if the lookup fails.
+      }
+      return apiError(
+        409,
+        duplicateDevice ? "duplicate_device" : "duplicate_name",
+        duplicateDevice
+          ? "Attendance has already been marked from this device."
+          : "Attendance has already been marked under this name. Ask the host to remove the earlier entry if it was a mistake.",
+      );
     }
     console.error("mark attendance failed", error);
-    return apiError(500, "server_error", "Could not mark attendance. Please try again.");
+    return apiError(
+      500,
+      "server_error",
+      locationVerified
+        ? "Your location was verified, but we could not save your attendance because of a server problem on our side. Please ask the host to approve you manually."
+        : "We could not save your attendance because of a server problem on our side. Please try again, or ask the host to approve you manually.",
+    );
   }
 }

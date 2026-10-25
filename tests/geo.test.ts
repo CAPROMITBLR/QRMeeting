@@ -34,4 +34,17 @@ describe("decideGeofence", () => {
   it("accepts accuracy at the configured maximum", () => {
     expect(decideGeofence({ lat: 0, lng: 0 }, { lat: 0, lng: 0 }, 100, 500).allowed).toBe(true);
   });
+
+  it("accepts a venue-pin reading even when GPS accuracy is 135 m", () => {
+    // Reported case: attendee stood on the venue pin and their phone reported ±135 m.
+    const decision = decideGeofence(
+      { lat: 12.865495, lng: 77.526067 },
+      { lat: 12.865495, lng: 77.526067 },
+      100,
+      135,
+    );
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toBe("inside");
+    expect(decision.distanceM).toBe(0);
+  });
 });

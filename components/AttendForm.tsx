@@ -60,6 +60,12 @@ export function AttendForm({
   const [marked, setMarked] = useState<Marked | null>(null);
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [faculty, setFaculty] = useState<Array<{ facultyId: string; name: string }>>([]);
+  const [joinReason, setJoinReason] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestSent, setRequestSent] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [requestDeclined, setRequestDeclined] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +92,8 @@ export function AttendForm({
     event.preventDefault();
     setPending(true);
     setError(null);
+    setJoinReason(null);
+    setRequestError(null);
 
     let coordinates: Coordinates | null = null;
     if (requiresLocation) {
@@ -127,20 +135,19 @@ export function AttendForm({
         ok?: boolean;
         name?: string;
         markedAt?: string;
+        error?: string;
         message?: string;
         distance_m?: number;
         accuracy_m?: number | null;
         radius_m?: number;
+        can_request_join?: boolean;
       };
 
       if (!response.ok) {
-        const diagnostic =
-          typeof data.distance_m === "number"
-            ? ` (${data.distance_m} m away, allowed ${data.radius_m ?? "?"} m${
-                typeof data.accuracy_m === "number" ? `, GPS accuracy ${data.accuracy_m} m` : ""
-              })`
-            : "";
-        setError(`${data.message ?? "Could not mark attendance. Please try again."}${diagnostic}`);
+        setError(data.message ?? "We could not mark your attendance.");
+        if (data.can_request_join && response.status === 403) {
+          setJoinReason(data.error ?? "outside_range");
+        }
         return;
       }
 
@@ -153,6 +160,87 @@ export function AttendForm({
       setError("Network error. Please check your connection and try again.");
     } finally {
       setPending(false);
+    }
+  }
+
+  // Poll the request so an approval turns into the usual success card.
+  useEffect(() => {
+    if (!requestId) return;
+    let active = true;
+
+    const check = async () => {
+      try {
+        const response = await fetch(`/api/join-requests/${requestId}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as { status?: string; markedAt?: string | null };
+        if (!active) return;
+        if (data.status === "approved") {
+          setRequestId(null);
+          setRequestSent(null);
+          setMarked({
+            name: name.trim() || "You",
+            markedAt: data.markedAt ?? new Date().toISOString(),
+            title,
+          });
+        } else if (data.status === "rejected") {
+          setRequestId(null);
+          setRequestSent(null);
+          setRequestDeclined(true);
+        }
+      } catch {
+        // Keep polling; a transient network error is not a decision.
+      }
+    };
+
+    void check();
+    const timer = window.setInterval(check, 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [requestId, name, title]);
+
+  async function requestToJoin() {
+    setRequesting(true);
+    setRequestError(null);
+    setRequestDeclined(false);
+    try {
+      const response = await fetch("/api/join-requests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          meetingId,
+          name,
+          collegeId,
+          department,
+          deviceId: readOrCreateDeviceId(),
+          lat: coordinates?.lat ?? null,
+          lng: coordinates?.lng ?? null,
+          accuracy: coordinates?.accuracy ?? null,
+          reason: joinReason ?? "outside_range",
+        }),
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        requestId?: string;
+      };
+      if (!response.ok) {
+        setRequestError(data.message ?? "Could not send your request to join.");
+        if (data.error === "duplicate_name" || data.error === "duplicate_device") setJoinReason(null);
+        return;
+      }
+      setRequestSent(
+        data.message ?? "Request sent. The host can accept or reject it from the attendance page.",
+      );
+      setJoinReason(null);
+      setError(null);
+      setRequestId(data.requestId ?? null);
+    } catch {
+      setRequestError("Network error. Please check your connection and try again.");
+    } finally {
+      setRequesting(false);
     }
   }
 
@@ -274,6 +362,38 @@ export function AttendForm({
       {error ? (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
+        </p>
+      ) : null}
+
+      {joinReason ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-gold/40 bg-gold/5 px-3 py-3">
+          <p className="text-xs text-slate-600">
+            <span className="font-semibold text-navy">Geofence check failed.</span> That does not necessarily mean
+            you are in the wrong place — if you are at the meeting location, ask the host to let you in. They can
+            accept or reject your request.
+          </p>
+          <button
+            type="button"
+            onClick={requestToJoin}
+            disabled={requesting}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gold bg-white px-4 py-2 text-sm font-semibold text-gold-dark transition hover:bg-gold hover:text-white disabled:opacity-60"
+          >
+            {requesting ? "Sending request…" : "Request to join this meeting"}
+          </button>
+          {requestError ? <p className="text-xs text-red-700">{requestError}</p> : null}
+        </div>
+      ) : null}
+
+      {requestSent ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {requestSent}
+        </p>
+      ) : null}
+
+      {requestDeclined ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          The host rejected your request to join. Please speak to them directly if you were at the meeting
+          location.
         </p>
       ) : null}
 

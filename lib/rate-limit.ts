@@ -1,4 +1,4 @@
-import { ATTENDANCE_RATE_LIMIT, MEETINGS_RATE_LIMIT, RATE_WINDOW_MS } from "@/lib/config";
+import { ATTENDANCE_RATE_LIMIT, HOST_AUTH_RATE_LIMIT, MEETINGS_RATE_LIMIT, RATE_WINDOW_MS } from "@/lib/config";
 
 type RateLimitDecision =
   | { allowed: true }
@@ -61,5 +61,10 @@ export const attendanceRateLimiter = createMemoryRateLimiter({
 
 export const meetingRateLimiter = createMemoryRateLimiter({
   limit: MEETINGS_RATE_LIMIT,
+  windowMs: RATE_WINDOW_MS,
+});
+
+export const hostAuthRateLimiter = createMemoryRateLimiter({
+  limit: HOST_AUTH_RATE_LIMIT,
   windowMs: RATE_WINDOW_MS,
 });
