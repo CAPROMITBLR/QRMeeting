@@ -1,4 +1,10 @@
-import { ATTENDANCE_RATE_LIMIT, HOST_AUTH_RATE_LIMIT, MEETINGS_RATE_LIMIT, RATE_WINDOW_MS } from "@/lib/config";
+import {
+  ATTENDANCE_RATE_LIMIT,
+  FACULTY_REPORT_RATE_LIMIT,
+  FACULTY_SEARCH_RATE_LIMIT,
+  MEETINGS_RATE_LIMIT,
+  RATE_WINDOW_MS,
+} from "@/lib/config";
 
 type RateLimitDecision =
   | { allowed: true }
@@ -64,7 +70,13 @@ export const meetingRateLimiter = createMemoryRateLimiter({
   windowMs: RATE_WINDOW_MS,
 });
 
-export const hostAuthRateLimiter = createMemoryRateLimiter({
-  limit: HOST_AUTH_RATE_LIMIT,
+/** One keystroke burst per attendee, so the limit only stops scripted scraping. */
+export const facultySearchRateLimiter = createMemoryRateLimiter({
+  limit: FACULTY_SEARCH_RATE_LIMIT,
+  windowMs: RATE_WINDOW_MS,
+});
+
+export const facultyReportRateLimiter = createMemoryRateLimiter({
+  limit: FACULTY_REPORT_RATE_LIMIT,
   windowMs: RATE_WINDOW_MS,
 });

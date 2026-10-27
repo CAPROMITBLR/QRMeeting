@@ -9,7 +9,7 @@
 
 export const MEETING_EVENT = "change";
 
-export type MeetingChangeKind = "attendance" | "request" | "meeting";
+export type MeetingChangeKind = "attendance" | "request" | "meeting" | "report";
 
 export function meetingTopic(meetingId: string): string {
   return `meeting:${meetingId}`;

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:push": "node --env-file=.env scripts/apply-schema.mjs"
+    "db:push": "node --env-file=.env scripts/apply-schema.mjs",
+    "db:seed-faculty": "node --env-file=.env scripts/seed-faculty.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   COLLEGE_ID_MAX_LENGTH,
-  COLLEGE_ID_REQUIRED,
+  FACULTY_NOTE_MAX_LENGTH,
   MAX_MEANINGFUL_ACCURACY_M,
   NAME_MAX_LENGTH,
   RADIUS_MAX_M,
@@ -10,6 +10,7 @@ import {
   TITLE_MAX_LENGTH,
   MEETING_DURATION_MAX_MINUTES,
 } from "@/lib/config";
+import { normalizeFacultyId } from "@/lib/faculty-directory";
 import { isUuid, normalizeText, parseStartsAt } from "@/lib/validation";
 
 const latitude = z.number().min(-90).max(90);
@@ -90,15 +91,15 @@ export const createMeetingSchema = z
 const attendanceFields = z.object({
   meetingId: z.string().refine(isUuid, { message: "This meeting does not exist." }),
   name: cleanedText(NAME_MAX_LENGTH, "Full name"),
+  // Optional: the attend form lets people type their own details, and one
+  // faculty member in the directory has no MAHE ID issued yet. Digits without
+  // the "MAHE" prefix are accepted and completed here.
   collegeId: z
     .string()
     .nullish()
-    .transform((value) => normalizeText(value ?? ""))
+    .transform((value) => normalizeFacultyId(value))
     .refine((value) => value.length <= COLLEGE_ID_MAX_LENGTH, {
-      message: `College ID must be ${COLLEGE_ID_MAX_LENGTH} characters or fewer.`,
-    })
-    .refine((value) => !COLLEGE_ID_REQUIRED || value.length > 0, {
-      message: "College ID / roll number is required.",
+      message: `MAHE ID must be ${COLLEGE_ID_MAX_LENGTH} characters or fewer.`,
     }),
   department: z.string().nullish().transform((value) => normalizeText(value ?? "")).refine((value) => value.length <= 100, {
     message: "Department must be 100 characters or fewer.",
@@ -138,28 +139,37 @@ export const decisionSchema = z.object({
   action: z.enum(["approve", "reject"]),
 });
 
-export const hostCredentialsSchema = z.object({
-  name: z
+/** "My MAHE ID is missing, or the details we load are wrong." */
+export const FACULTY_REPORT_REASONS = ["id_missing", "details_incorrect", "other"] as const;
+
+export const facultyReportSchema = z.object({
+  meetingId: z.string().refine(isUuid, { message: "This meeting does not exist." }),
+  maheId: z
     .string()
-    .transform((value) => normalizeText(value))
-    .refine((value) => value.length >= 2, { message: "Enter the name you want to sign in with." })
-    .refine((value) => value.length <= 60, { message: "Host name must be 60 characters or fewer." }),
-  passphrase: z
+    .nullish()
+    .transform((value) => normalizeFacultyId(value))
+    .refine((value) => value.length <= COLLEGE_ID_MAX_LENGTH, {
+      message: `MAHE ID must be ${COLLEGE_ID_MAX_LENGTH} characters or fewer.`,
+    }),
+  name: z.string().nullish().transform((value) => normalizeText(value ?? "")).refine((value) => value.length <= NAME_MAX_LENGTH, {
+    message: `Name must be ${NAME_MAX_LENGTH} characters or fewer.`,
+  }),
+  department: z.string().nullish().transform((value) => normalizeText(value ?? "")).refine((value) => value.length <= 120, {
+    message: "Department must be 120 characters or fewer.",
+  }),
+  reason: z.enum(FACULTY_REPORT_REASONS).default("id_missing"),
+  note: z
     .string()
-    .min(8, { message: "Your passphrase needs at least 8 characters." })
-    .max(200, { message: "Your passphrase is too long." }),
-  mode: z.enum(["signin", "signup"]).default("signin"),
+    .nullish()
+    .transform((value) => normalizeText(value ?? ""))
+    .refine((value) => value.length <= FACULTY_NOTE_MAX_LENGTH, {
+      message: `Please keep the note under ${FACULTY_NOTE_MAX_LENGTH} characters.`,
+    }),
+  deviceId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/, { message: "Could not identify this device." }).nullish(),
 });
 
-export const claimMeetingsSchema = z.object({
-  meetings: z
-    .array(
-      z.object({
-        id: z.string().refine(isUuid, { message: "A saved meeting id is not valid." }),
-        key: z.string().min(20).max(200),
-      }),
-    )
-    .max(50),
+export const facultyReportDecisionSchema = z.object({
+  action: z.literal("resolve"),
 });
 
 export const updateMeetingSchema = z

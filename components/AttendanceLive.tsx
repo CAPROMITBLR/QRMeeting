@@ -30,6 +30,17 @@ export type JoinRequest = {
   createdAt: string;
 };
 
+/** An attendee saying their MAHE ID is missing, or the details against it are wrong. */
+export type FacultyReport = {
+  id: string;
+  maheId: string | null;
+  name: string | null;
+  department: string | null;
+  reason: string;
+  note: string | null;
+  createdAt: string;
+};
+
 type Snapshot = {
   isOpen: boolean;
   autoClosed: boolean;
@@ -37,7 +48,21 @@ type Snapshot = {
   count: number;
   attendees: Attendee[];
   requests: JoinRequest[];
+  reports: FacultyReport[];
 };
+
+const REPORT_LABELS: Record<string, string> = {
+  id_missing: "MAHE ID not in the directory",
+  details_incorrect: "Name or department is wrong",
+  other: "Something else",
+};
+
+function describeReport(report: FacultyReport): string {
+  const parts = [REPORT_LABELS[report.reason] ?? report.reason];
+  if (report.department) parts.push(report.department);
+  parts.push(formatTime(report.createdAt));
+  return parts.join(" · ");
+}
 
 function describeRequest(request: JoinRequest): string {
   const parts: string[] = [];
@@ -76,8 +101,8 @@ export function AttendanceLive({
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const [editingAutoClose, setEditingAutoClose] = useState(false);
@@ -86,6 +111,9 @@ export function AttendanceLive({
   const refreshInFlightRef = useRef(false);
   const refreshSoonRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Bumped on every local change; a poll that started before the change is
+  // discarded so it cannot overwrite the newer state (the "click twice" bug).
+  const mutationRef = useRef(0);
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -98,6 +126,7 @@ export function AttendanceLive({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const token = mutationRef.current;
     try {
       const response = await fetch(
         `/api/meetings/${meetingId}/attendance?key=${encodeURIComponent(hostKey)}`,
@@ -108,6 +137,9 @@ export function AttendanceLive({
         return;
       }
       const data = (await response.json()) as Snapshot;
+      // A local change landed while this poll was in flight: its snapshot is
+      // older than what we already applied, so drop it.
+      if (mutationRef.current !== token) return;
       setSnapshot(data);
       setError(null);
       setRefreshedAt(Date.now());
@@ -175,6 +207,7 @@ export function AttendanceLive({
   async function patchMeeting(body: { is_open?: boolean; closes_at?: string | null }) {
     setBusy(true);
     setError(null);
+    abortRef.current?.abort();
     try {
       const response = await fetch(`/api/meetings/${meetingId}?key=${encodeURIComponent(hostKey)}`, {
         method: "PATCH",
@@ -186,6 +219,7 @@ export function AttendanceLive({
         setError(data.message ?? "Could not update the meeting.");
         return false;
       }
+      mutationRef.current += 1;
       setSnapshot((current) => {
         const closesAt = data.closesAt === undefined ? current.closesAt : data.closesAt;
         return {
@@ -240,6 +274,7 @@ export function AttendanceLive({
         return;
       }
 
+      mutationRef.current += 1;
       setSnapshot((current) => ({
         ...current,
         requests: current.requests.filter((item) => item.id !== request.id),
@@ -252,31 +287,33 @@ export function AttendanceLive({
     }
   }
 
-  async function removeAttendee(attendee: Attendee) {
-    if (!window.confirm(`Remove ${attendee.name} from this meeting's attendance?`)) return;
-
-    setDeletingId(attendee.id);
+  async function resolveReport(report: FacultyReport) {
+    setResolvingId(report.id);
     setError(null);
     try {
       const response = await fetch(
-        `/api/meetings/${meetingId}/attendance/${attendee.id}?key=${encodeURIComponent(hostKey)}`,
-        { method: "DELETE" },
+        `/api/meetings/${meetingId}/faculty-reports/${report.id}?key=${encodeURIComponent(hostKey)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "resolve" }),
+        },
       );
       const data = (await response.json()) as { message?: string };
       if (!response.ok) {
-        setError(data.message ?? "Could not remove the entry.");
+        setError(data.message ?? "Could not update this report.");
         return;
       }
 
+      mutationRef.current += 1;
       setSnapshot((current) => ({
         ...current,
-        count: Math.max(0, current.count - 1),
-        attendees: current.attendees.filter((item) => item.id !== attendee.id),
+        reports: current.reports.filter((item) => item.id !== report.id),
       }));
     } catch {
       setError("Network error. Please try again.");
     } finally {
-      setDeletingId(null);
+      setResolvingId(null);
     }
   }
 
@@ -426,12 +463,64 @@ export function AttendanceLive({
         </section>
       ) : null}
 
+      {snapshot.reports.length > 0 ? (
+        <section className="border-b border-amber-200 bg-amber-50/70 px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+              Directory reports ({snapshot.reports.length})
+            </h3>
+            <span className="text-[11px] text-amber-700">
+              Someone could not find their MAHE ID — add or fix it, then resolve
+              <a
+                href="/reports"
+                className="ml-1.5 font-semibold text-navy underline underline-offset-2 hover:text-gold"
+              >
+                inbox
+              </a>
+            </span>
+          </div>
+          <ul className="mt-2 flex flex-col gap-2">
+            {snapshot.reports.map((report) => (
+              <li
+                key={report.id}
+                className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-line bg-white px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-navy">
+                    {report.name ?? "Name not given"}
+                    {report.maheId ? (
+                      <span className="ml-2 font-mono text-xs font-normal text-slate-500">{report.maheId}</span>
+                    ) : (
+                      <span className="ml-2 text-xs font-normal text-slate-400">no MAHE ID</span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-slate-500">{describeReport(report)}</p>
+                  {report.note ? (
+                    <p className="mt-1 whitespace-pre-wrap border-l-2 border-gold/40 pl-2 text-[11px] italic text-slate-600">
+                      {report.note}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => resolveReport(report)}
+                  disabled={resolvingId === report.id}
+                  className="min-h-10 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-navy transition hover:border-gold hover:text-gold disabled:opacity-60"
+                >
+                  {resolvingId === report.id ? "Saving…" : "Resolve"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <div className="min-h-[16rem] flex-1 overflow-auto">
         {snapshot.attendees.length === 0 ? (
           <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 px-6 text-center">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-cream text-gold">⌛</span>
             <p className="text-sm font-medium text-slate-500">Waiting for the first attendee…</p>
-            <p className="text-xs text-slate-400">The list updates every 3 seconds.</p>
+            <p className="text-xs text-slate-400">Attendees appear here as they mark attendance.</p>
           </div>
         ) : (
           <table className="w-full min-w-[34rem] text-left text-sm">
@@ -439,13 +528,9 @@ export function AttendanceLive({
               <tr className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
                 <th className="px-4 py-2 font-semibold sm:px-5">#</th>
                 <th className="px-2 py-2 font-semibold">Name</th>
-                <th className="px-2 py-2 font-semibold">College ID</th>
+                <th className="px-2 py-2 font-semibold">MAHE ID</th>
                 <th className="px-2 py-2 font-semibold">Department</th>
-                <th className="px-2 py-2 font-semibold">Distance</th>
-                <th className="px-2 py-2 text-right font-semibold">Time</th>
-                <th className="px-4 py-2 sm:px-5">
-                  <span className="sr-only">Remove</span>
-                </th>
+                <th className="px-4 py-2 text-right font-semibold sm:px-5">Time</th>
               </tr>
             </thead>
             <tbody>
@@ -462,22 +547,8 @@ export function AttendanceLive({
                   </td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.collegeId ?? "—"}</td>
                   <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.department ?? "—"}</td>
-                  <td className="px-2 py-2.5 text-xs text-slate-500">
-                    {attendee.distanceM === null ? "—" : `${Math.round(attendee.distanceM)} m`}
-                  </td>
-                  <td className="px-2 py-2.5 text-right text-xs text-slate-500">
+                  <td className="px-4 py-2.5 text-right text-xs text-slate-500 sm:px-5">
                     {formatTime(attendee.markedAt)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right sm:px-5">
-                    <button
-                      type="button"
-                      onClick={() => removeAttendee(attendee)}
-                      disabled={deletingId === attendee.id}
-                      title={`Remove ${attendee.name}`}
-                      className="min-h-12 min-w-12 rounded-lg px-2 text-xs font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                    >
-                      {deletingId === attendee.id ? "…" : "✕"}
-                    </button>
                   </td>
                 </tr>
               ))}

@@ -1,9 +1,9 @@
-/** Flip to true to require the college ID / roll number on the attend form. */
-export const COLLEGE_ID_REQUIRED = false;
-
 export const TITLE_MAX_LENGTH = 120;
 export const NAME_MAX_LENGTH = 100;
 export const COLLEGE_ID_MAX_LENGTH = 50;
+
+/** Faculty directory (public.faculty): autofill for the attend form. */
+export const FACULTY_NOTE_MAX_LENGTH = 500;
 
 /** Timezone used when showing meeting times. */
 export const DISPLAY_TIMEZONE = "Asia/Kolkata";
@@ -20,7 +20,8 @@ export const MAX_MEANINGFUL_ACCURACY_M = 100_000;
 /** Rate limits (per client IP, per server instance). */
 export const ATTENDANCE_RATE_LIMIT = 10;
 export const MEETINGS_RATE_LIMIT = 5;
-export const HOST_AUTH_RATE_LIMIT = 10;
+export const FACULTY_SEARCH_RATE_LIMIT = 60;
+export const FACULTY_REPORT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
 
 /** Host page polling interval (also the fallback when realtime is unavailable). */

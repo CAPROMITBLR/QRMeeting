@@ -33,6 +33,7 @@ export async function POST(request: Request) {
   const { meetingId, name, collegeId, department, deviceId, lat, lng, accuracy, reason } = parsed.data;
 
   try {
+
     const [meeting] = await sql<{
       is_open: boolean;
       starts_at: Date;

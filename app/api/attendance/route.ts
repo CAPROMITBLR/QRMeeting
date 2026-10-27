@@ -25,12 +25,15 @@ export async function POST(request: Request) {
     return apiError(field === "meetingId" ? 404 : 400, field === "meetingId" ? "not_found" : "invalid_input", message);
   }
 
+  // What the attendee typed is what gets recorded: the directory only autofills
+  // the form, and the server must not silently rewrite someone's own name.
   const { meetingId, name, collegeId, department, deviceId, lat, lng, accuracy } = parsed.data;
   // Tracks whether the geofence check itself passed, so a later database error
   // can tell the attendee their location was not the problem.
   let locationVerified = false;
 
   try {
+
     const [meeting] = await sql<{
       title: string;
       is_open: boolean;

@@ -3,17 +3,14 @@ import Link from "next/link";
 
 import { Brand } from "@/components/Brand";
 import { CreateMeetingForm } from "@/components/CreateMeetingForm";
-import { HostAuthPanel } from "@/components/HostAuthPanel";
-import { getHost } from "@/lib/host-session";
+import { SavedMeetings } from "@/components/SavedMeetings";
 
 export const metadata: Metadata = {
   title: "Create a meeting · Meeting Attendance",
   description: "Create a meeting, print the QR code, and watch attendance arrive live.",
 };
 
-export default async function Home() {
-  const host = await getHost();
-
+export default function Home() {
   return (
     <div className="bg-dot flex min-h-screen flex-col">
       <div className="h-1 w-full bg-gradient-to-r from-gold to-navy" />
@@ -24,45 +21,33 @@ export default async function Home() {
         <div className="card overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-gold to-navy" />
           <div className="flex flex-col gap-5 p-6">
-            {host ? (
-              <>
-                <div>
-                  <h1 className="font-serif text-2xl font-bold text-navy">Create a meeting</h1>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Generate a QR code for the room. Attendees scan it, enter their name, and appear in your list
-                    instantly.
-                  </p>
-                </div>
-                <CreateMeetingForm hostName={host.name} />
-              </>
-            ) : (
-              <>
-                <HostAuthPanel />
-                <p className="rounded-lg border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-slate-600">
-                  A host account keeps your meetings in the database instead of this browser, so the link works on
-                  any device.
-                </p>
-              </>
-            )}
+            <div>
+              <h1 className="font-serif text-2xl font-bold text-navy">Create a meeting</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Generate a QR code for the room. Attendees scan it, pick their name from the faculty directory, and
+                appear in your list instantly.
+              </p>
+            </div>
+            <CreateMeetingForm />
           </div>
         </div>
 
-        {host ? (
-          <section className="card flex flex-wrap items-center justify-between gap-3 p-5">
-            <div>
-              <h2 className="font-serif text-lg font-bold text-navy">Your meetings</h2>
-              <p className="text-xs text-slate-500">
-                Signed in as <span className="font-semibold text-navy">{host.name}</span>
-              </p>
-            </div>
-            <Link
-              href="/meetings"
-              className="inline-flex min-h-12 items-center rounded-lg border border-line px-4 py-2 text-xs font-semibold text-navy transition hover:border-gold hover:text-gold"
-            >
-              Open my meetings
-            </Link>
-          </section>
-        ) : null}
+        <SavedMeetings />
+
+        <Link
+          href="/reports"
+          className="card flex items-center justify-between gap-3 px-5 py-4 transition hover:border-gold"
+        >
+          <span>
+            <span className="block font-serif text-base font-bold text-navy">Directory reports</span>
+            <span className="block text-xs text-slate-500">
+              Missing or wrong MAHE IDs reported by attendees — fix them here.
+            </span>
+          </span>
+          <span aria-hidden className="text-lg text-gold">
+            →
+          </span>
+        </Link>
 
         <ol className="grid gap-2 text-xs text-slate-500">
           {[

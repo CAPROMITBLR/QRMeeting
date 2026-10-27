@@ -24,6 +24,16 @@ type JoinRequest = {
   created_at: Date;
 };
 
+type FacultyReport = {
+  id: string;
+  mahe_id: string | null;
+  name: string | null;
+  department: string | null;
+  reason: string;
+  note: string | null;
+  created_at: Date;
+};
+
 export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id]/attendance">) {
   const { id } = await ctx.params;
   if (!isUuid(id)) return apiError(403, "forbidden", "This host link is not valid.");
@@ -59,6 +69,13 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
       order by created_at asc
     `;
 
+    const reports = await sql<FacultyReport[]>`
+      select id, mahe_id, name, department, reason, note, created_at
+      from public.faculty_reports
+      where meeting_id = ${id} and status = 'open'
+      order by created_at asc
+    `;
+
     return json({
       isOpen: meeting.is_open && !meeting.auto_closed,
       autoClosed: meeting.auto_closed,
@@ -81,6 +98,15 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
         distanceM: row.distance_m,
         accuracyM: row.accuracy_m,
         reason: row.reason,
+        createdAt: row.created_at,
+      })),
+      reports: reports.map((row) => ({
+        id: row.id,
+        maheId: row.mahe_id,
+        name: row.name,
+        department: row.department,
+        reason: row.reason,
+        note: row.note,
         createdAt: row.created_at,
       })),
     });

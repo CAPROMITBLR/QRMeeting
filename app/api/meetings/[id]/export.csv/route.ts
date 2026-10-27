@@ -32,7 +32,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
     `;
 
     const csv = toCsv([
-      ["Name", "College ID", "Department", "Marked at (IST)", "Distance from venue (m)"],
+      ["Name", "MAHE ID", "Department", "Marked at (IST)", "Distance from venue (m)"],
       ...rows.map((row) => [
         row.name,
         row.college_id,

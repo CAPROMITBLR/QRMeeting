@@ -43,3 +43,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# spreadsheets
+# Rosters belong in the database (see scripts/seed-faculty.mjs), not in git.
+# Root-anchored on purpose: app/api/meetings/[id]/export.xlsx/ is a route directory.
+/*.xlsx
+~$*
