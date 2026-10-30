@@ -45,6 +45,8 @@ type Snapshot = {
   isOpen: boolean;
   autoClosed: boolean;
   closesAt: string | null;
+  endedAt: string | null;
+  reportSentAt: string | null;
   count: number;
   attendees: Attendee[];
   requests: JoinRequest[];
@@ -92,11 +94,13 @@ export function AttendanceLive({
   hostKey,
   initial,
   realtime,
+  defaultReportEmail,
 }: {
   meetingId: string;
   hostKey: string;
   initial: Snapshot;
   realtime: RealtimeConfig | null;
+  defaultReportEmail: string;
 }) {
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +112,9 @@ export function AttendanceLive({
   const [editingAutoClose, setEditingAutoClose] = useState(false);
   const [autoCloseDraft, setAutoCloseDraft] = useState("");
   const [connection, setConnection] = useState<HostConnectionState>(realtime ? "connecting" : "offline");
+  const [reportEmail, setReportEmail] = useState(defaultReportEmail);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportStatus, setReportStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const refreshInFlightRef = useRef(false);
   const refreshSoonRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -203,6 +210,7 @@ export function AttendanceLive({
   // The server flag covers first paint; the tick flips the UI the moment the deadline passes.
   const autoClosed = snapshot.autoClosed || (closesAtMs !== null && now !== null && now >= closesAtMs);
   const isOpen = snapshot.isOpen && !autoClosed;
+  const meetingEnded = snapshot.endedAt !== null;
 
   async function patchMeeting(body: { is_open?: boolean; closes_at?: string | null }) {
     setBusy(true);
@@ -284,6 +292,67 @@ export function AttendanceLive({
       setError("Network error. Please try again.");
     } finally {
       setDecidingId(null);
+    }
+  }
+
+  async function endAndEmailReport() {
+    const recipients = reportEmail.trim();
+    if (recipients === "") {
+      setReportStatus({ ok: false, text: "Add at least one email address first." });
+      return;
+    }
+    setReportBusy(true);
+    setReportStatus(null);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/meetings/${meetingId}/end?key=${encodeURIComponent(hostKey)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: recipients }),
+        },
+      );
+      const data = (await response.json()) as {
+        ok?: boolean;
+        endedAt?: string | null;
+        reportSentAt?: string | null;
+        recipients?: string[];
+        message?: string;
+      };
+
+      mutationRef.current += 1;
+      // The meeting ends before the email is attempted, so reflect that
+      // immediately (full state arrives on the next poll).
+      setSnapshot((current) => ({
+        ...current,
+        isOpen: false,
+        endedAt: data.endedAt ?? new Date().toISOString(),
+        reportSentAt: data.reportSentAt ?? null,
+      }));
+
+      if (!response.ok || data.ok !== true) {
+        setReportStatus({
+          ok: false,
+          text: data.message ?? "Could not email the report — the meeting is ended, so try “Resend report”.",
+        });
+        void refresh();
+        return;
+      }
+
+      setReportStatus({
+        ok: true,
+        text: `Report sent to ${(data.recipients ?? []).join(", ")}.`,
+      });
+      void refreshSoon();
+    } catch {
+      setReportStatus({
+        ok: false,
+        text: "Network error — the send may have gone through. Try “Resend report” after a moment.",
+      });
+      void refreshSoon();
+    } finally {
+      setReportBusy(false);
     }
   }
 
@@ -558,6 +627,43 @@ export function AttendanceLive({
       </div>
 
       <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex min-w-[14rem] flex-1 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              {meetingEnded
+                ? `Report email${snapshot.reportSentAt ? ` · sent ${formatTime(snapshot.reportSentAt)}` : " · not sent yet"}`
+                : "End meeting & email report to"}
+            </span>
+            <input
+              type="email"
+              multiple
+              value={reportEmail}
+              onChange={(event) => {
+                setReportEmail(event.target.value);
+                setReportStatus(null);
+              }}
+              placeholder="you@gmail.com, someone@gmail.com"
+              className="field focus:field-focus py-2"
+              autoComplete="email"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={endAndEmailReport}
+            disabled={reportBusy || reportEmail.trim() === ""}
+            className="min-h-12 rounded-lg bg-navy px-4 py-2 text-xs font-semibold text-white transition hover:bg-navy/90 disabled:opacity-60"
+          >
+            {reportBusy ? "Working…" : meetingEnded ? "Resend report" : "End meeting & email report"}
+          </button>
+        </div>
+        {reportStatus ? (
+          <p
+            role="status"
+            className={`text-xs ${reportStatus.ok ? "text-emerald-700" : "text-red-700"}`}
+          >
+            {reportStatus.text}
+          </p>
+        ) : null}
         <p className="text-[11px] text-slate-400">
           {connection === "live"
             ? `Live · updated ${refreshedAt ? formatTime(refreshedAt) : "just now"}`

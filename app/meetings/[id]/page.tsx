@@ -35,6 +35,8 @@ type Meeting = {
   radius_m: number;
   closes_at: Date | null;
   auto_closed: boolean;
+  ended_at: Date | null;
+  report_sent_at: Date | null;
 };
 
 export default async function Page({
@@ -49,7 +51,7 @@ export default async function Page({
 
   const [meeting] = await sql<Meeting[]>`
     select
-      id, title, host_token, starts_at, is_open, lat, lng, radius_m, closes_at,
+      id, title, host_token, starts_at, is_open, lat, lng, radius_m, closes_at, ended_at, report_sent_at,
       (closes_at is not null and closes_at <= now()) as auto_closed
     from public.meetings
     where id = ${id}
@@ -241,11 +243,18 @@ export default async function Page({
             meetingId={meeting.id}
             hostKey={hostKey}
             realtime={realtimeConfig()}
+            defaultReportEmail={process.env.REPORT_EMAIL?.trim() ?? ""}
             initial={{
               isOpen: meeting.is_open && !autoClosed,
               autoClosed,
               closesAt: meeting.closes_at
                 ? meeting.closes_at.toISOString()
+                : null,
+              endedAt: meeting.ended_at
+                ? meeting.ended_at.toISOString()
+                : null,
+              reportSentAt: meeting.report_sent_at
+                ? meeting.report_sent_at.toISOString()
                 : null,
               count: attendees.length,
               attendees,

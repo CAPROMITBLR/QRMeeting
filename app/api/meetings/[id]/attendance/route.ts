@@ -44,9 +44,11 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
       is_open: boolean;
       closes_at: Date | null;
       auto_closed: boolean;
+      ended_at: Date | null;
+      report_sent_at: Date | null;
     }[]>`
       select
-        host_token, is_open, closes_at,
+        host_token, is_open, closes_at, ended_at, report_sent_at,
         (closes_at is not null and closes_at <= now()) as auto_closed
       from public.meetings where id = ${id}
     `;
@@ -80,6 +82,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
       isOpen: meeting.is_open && !meeting.auto_closed,
       autoClosed: meeting.auto_closed,
       closesAt: meeting.closes_at,
+      endedAt: meeting.ended_at,
+      reportSentAt: meeting.report_sent_at,
       count: rows.length,
       attendees: rows.map((row) => ({
         id: row.id,

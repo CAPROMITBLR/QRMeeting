@@ -19,6 +19,12 @@ create table if not exists public.meetings (
 create index if not exists meetings_created_at_idx
   on public.meetings (created_at desc);
 
+-- When the meeting was manually ended (`ended_at` is also read to show a
+-- "Reopen" state) and when an attendance report was last emailed out.
+alter table public.meetings
+  add column if not exists ended_at timestamptz,
+  add column if not exists report_sent_at timestamptz;
+
 create table if not exists public.attendance (
   id          uuid primary key default gen_random_uuid(),
   meeting_id  uuid not null references public.meetings (id) on delete cascade,

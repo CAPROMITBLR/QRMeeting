@@ -110,6 +110,8 @@ export function AttendForm({
   const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState(0);
+  const [nameCommitted, setNameCommitted] = useState(false);
+  const [nameListPinned, setNameListPinned] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
 
   // The directory is fetched once: both search fields and the department
@@ -201,6 +203,7 @@ export function AttendForm({
     setDepartment(member.department);
     setMatched(member);
     setActiveField(null);
+    setNameListPinned(false);
     setError(null);
     setReportMessage(null);
   }
@@ -220,6 +223,7 @@ export function AttendForm({
       chooseMember(list[Math.min(highlighted, list.length - 1)]);
     } else if (event.key === "Escape") {
       setActiveField(null);
+      setNameListPinned(false);
     }
   }
 
@@ -520,7 +524,26 @@ export function AttendForm({
     );
   }
 
-  const showNameList = activeField === "name" && roster !== null;
+  const showNameList =
+    (activeField === "name" || nameListPinned) && roster !== null;
+  /**
+   * The department stays locked until the person has entered a name the
+   * directory does not know: that is the manual-flow branch where they pick
+   * their department themselves. A directory name auto-fills and locks it.
+   */
+  const departmentUnlocked =
+    matched === null && nameCommitted && name.trim() !== "";
+
+  function toggleNameList() {
+    if (!showNameList) {
+      setNameListPinned(true);
+      setActiveField("name");
+    } else {
+      setNameListPinned(false);
+      setActiveField(null);
+    }
+    setHighlighted(0);
+  }
   const showIdList = activeField === "id" && roster !== null;
   const nameMatches = showNameList ? suggestions.shown : [];
   const idMatches = showIdList ? suggestions.shown : [];
@@ -565,6 +588,7 @@ export function AttendForm({
         >
           Full name
         </label>
+        <div className="relative">
         <input
           id="name"
           name="name"
@@ -581,6 +605,10 @@ export function AttendForm({
           onChange={(event) => {
             const typed = event.target.value;
             setName(typed);
+            setNameCommitted(false);
+            // A cleared name leaves the form with no one in it: drop a
+            // department choice so nothing stale survives the reset.
+            if (typed.trim() === "") setDepartment("");
             markDirty();
             setHighlighted(0);
             // A full name typed out lands on exactly one person: fill the rest
@@ -597,10 +625,27 @@ export function AttendForm({
             setActiveField("name");
             setHighlighted(0);
           }}
-          onBlur={() => setActiveField(null)}
+          onBlur={() => {
+            // Leaving the name field commits it: a name the directory knows
+            // has usually auto-picked already, anything else unlocks the
+            // department for the manual flow.
+            setActiveField(null);
+            if (name.trim() !== "") setNameCommitted(true);
+          }}
           placeholder="Type your name as it appears in the directory"
-          className="field focus:field-focus"
+          className="field focus:field-focus pr-10"
         />
+          <button
+            type="button"
+            aria-label={showNameList ? "Hide the name list" : "Show the full name list"}
+            // Keeps focus in the input so the list does not close on mousedown.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={toggleNameList}
+            className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-cream hover:text-navy"
+          >
+            <ChevronIcon open={showNameList} />
+          </button>
+        </div>
         {roster === null && !rosterError ? (
           <p className="text-[11px] text-slate-400">
             Loading the faculty directory…
@@ -722,11 +767,20 @@ export function AttendForm({
             id="department"
             name="department"
             required
+            disabled={!departmentUnlocked}
             value={department}
             onChange={(event) => setDepartment(event.target.value)}
-            className="field focus:field-focus"
+            className={
+              departmentUnlocked
+                ? "field focus:field-focus"
+                : "field cursor-not-allowed border-line bg-cream/70 text-slate-400"
+            }
           >
-            <option value="">Select your department</option>
+            <option value="">
+              {departmentUnlocked
+                ? "Select your department"
+                : "Pick your name first"}
+            </option>
             {departments.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -747,6 +801,12 @@ export function AttendForm({
         {matched ? (
           <p className="text-[11px] text-slate-400">
             Locked to your directory entry.
+          </p>
+        ) : !departmentUnlocked ? (
+          <p className="text-[11px] text-slate-400">
+            Locks until you enter your name above. If your name is not in the
+            directory, type it in and the department unlocks for you to pick
+            from.
           </p>
         ) : (
           <p className="text-[11px] text-slate-500">
@@ -961,6 +1021,23 @@ export function AttendForm({
         ) : null}
       </div>
     </form>
+  );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`h-4 w-4 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }
 
