@@ -5,7 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ATTENDANCE_POLL_MS, ATTENDANCE_RECONCILE_MS } from "@/lib/config";
 import { formatClock, formatTime } from "@/lib/format";
 import type { RealtimeConfig } from "@/lib/realtime";
-import { subscribeToMeetingChange, type HostConnectionState } from "@/lib/realtime-client";
+import {
+  subscribeToMeetingChange,
+  type HostConnectionState,
+} from "@/lib/realtime-client";
 import { istDateTimeInput, parseIstDateTime } from "@/lib/timezone";
 
 export type Attendee = {
@@ -68,8 +71,12 @@ function describeReport(report: FacultyReport): string {
 
 function describeRequest(request: JoinRequest): string {
   const parts: string[] = [];
-  if (typeof request.distanceM === "number") parts.push(`${Math.round(request.distanceM)} m from the venue`);
-  if (request.reason === "location_inaccurate" && typeof request.accuracyM === "number") {
+  if (typeof request.distanceM === "number")
+    parts.push(`${Math.round(request.distanceM)} m from the venue`);
+  if (
+    request.reason === "location_inaccurate" &&
+    typeof request.accuracyM === "number"
+  ) {
     parts.push(`GPS accuracy ±${Math.round(request.accuracyM)} m`);
   } else if (request.reason === "location_required") {
     parts.push("location not shared");
@@ -111,10 +118,15 @@ export function AttendanceLive({
   const [now, setNow] = useState<number | null>(null);
   const [editingAutoClose, setEditingAutoClose] = useState(false);
   const [autoCloseDraft, setAutoCloseDraft] = useState("");
-  const [connection, setConnection] = useState<HostConnectionState>(realtime ? "connecting" : "offline");
+  const [connection, setConnection] = useState<HostConnectionState>(
+    realtime ? "connecting" : "offline",
+  );
   const [reportEmail, setReportEmail] = useState(defaultReportEmail);
   const [reportBusy, setReportBusy] = useState(false);
-  const [reportStatus, setReportStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [reportStatus, setReportStatus] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
   const refreshInFlightRef = useRef(false);
   const refreshSoonRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -151,7 +163,8 @@ export function AttendanceLive({
       setError(null);
       setRefreshedAt(Date.now());
     } catch (failure) {
-      if (failure instanceof DOMException && failure.name === "AbortError") return;
+      if (failure instanceof DOMException && failure.name === "AbortError")
+        return;
       setError("Connection lost — retrying…");
     } finally {
       refreshInFlightRef.current = false;
@@ -185,7 +198,8 @@ export function AttendanceLive({
   useEffect(() => {
     // Realtime pushes changes; this timer reconciles, and carries the page on
     // its own when the socket is unavailable.
-    const intervalMs = connection === "live" ? ATTENDANCE_RECONCILE_MS : ATTENDANCE_POLL_MS;
+    const intervalMs =
+      connection === "live" ? ATTENDANCE_RECONCILE_MS : ATTENDANCE_POLL_MS;
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
     }, intervalMs);
@@ -208,31 +222,45 @@ export function AttendanceLive({
 
   const closesAtMs = snapshot.closesAt ? Date.parse(snapshot.closesAt) : null;
   // The server flag covers first paint; the tick flips the UI the moment the deadline passes.
-  const autoClosed = snapshot.autoClosed || (closesAtMs !== null && now !== null && now >= closesAtMs);
+  const autoClosed =
+    snapshot.autoClosed ||
+    (closesAtMs !== null && now !== null && now >= closesAtMs);
   const isOpen = snapshot.isOpen && !autoClosed;
   const meetingEnded = snapshot.endedAt !== null;
 
-  async function patchMeeting(body: { is_open?: boolean; closes_at?: string | null }) {
+  async function patchMeeting(body: {
+    is_open?: boolean;
+    closes_at?: string | null;
+  }) {
     setBusy(true);
     setError(null);
     abortRef.current?.abort();
     try {
-      const response = await fetch(`/api/meetings/${meetingId}?key=${encodeURIComponent(hostKey)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await response.json()) as { isOpen?: boolean; closesAt?: string | null; message?: string };
+      const response = await fetch(
+        `/api/meetings/${meetingId}?key=${encodeURIComponent(hostKey)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const data = (await response.json()) as {
+        isOpen?: boolean;
+        closesAt?: string | null;
+        message?: string;
+      };
       if (!response.ok) {
         setError(data.message ?? "Could not update the meeting.");
         return false;
       }
       mutationRef.current += 1;
       setSnapshot((current) => {
-        const closesAt = data.closesAt === undefined ? current.closesAt : data.closesAt;
+        const closesAt =
+          data.closesAt === undefined ? current.closesAt : data.closesAt;
         return {
           ...current,
-          isOpen: typeof data.isOpen === "boolean" ? data.isOpen : current.isOpen,
+          isOpen:
+            typeof data.isOpen === "boolean" ? data.isOpen : current.isOpen,
           closesAt,
           autoClosed: closesAt !== null && Date.parse(closesAt) <= Date.now(),
         };
@@ -261,10 +289,14 @@ export function AttendanceLive({
       setError("Pick a date and time first.");
       return;
     }
-    if (await patchMeeting({ closes_at: parsed.toISOString() })) setEditingAutoClose(false);
+    if (await patchMeeting({ closes_at: parsed.toISOString() }))
+      setEditingAutoClose(false);
   }
 
-  async function decideRequest(request: JoinRequest, action: "approve" | "reject") {
+  async function decideRequest(
+    request: JoinRequest,
+    action: "approve" | "reject",
+  ) {
     setDecidingId(request.id);
     setError(null);
     try {
@@ -276,7 +308,10 @@ export function AttendanceLive({
           body: JSON.stringify({ action }),
         },
       );
-      const data = (await response.json()) as { status?: string; message?: string };
+      const data = (await response.json()) as {
+        status?: string;
+        message?: string;
+      };
       if (!response.ok) {
         setError(data.message ?? "Could not update this request.");
         return;
@@ -298,7 +333,10 @@ export function AttendanceLive({
   async function endAndEmailReport() {
     const recipients = reportEmail.trim();
     if (recipients === "") {
-      setReportStatus({ ok: false, text: "Add at least one email address first." });
+      setReportStatus({
+        ok: false,
+        text: "Add at least one email address first.",
+      });
       return;
     }
     setReportBusy(true);
@@ -334,7 +372,9 @@ export function AttendanceLive({
       if (!response.ok || data.ok !== true) {
         setReportStatus({
           ok: false,
-          text: data.message ?? "Could not email the report — the meeting is ended, so try “Resend report”.",
+          text:
+            data.message ??
+            "Could not email the report — the meeting is ended, so try “Resend report”.",
         });
         void refresh();
         return;
@@ -399,7 +439,9 @@ export function AttendanceLive({
 
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-            <span className={`h-1.5 w-1.5 rounded-full ${isOpen ? "animate-pulse bg-emerald-500" : "bg-slate-400"}`} />
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${isOpen ? "animate-pulse bg-emerald-500" : "bg-slate-400"}`}
+            />
             {isOpen ? "Live" : autoClosed ? "Auto-closed" : "Closed"}
           </span>
           <button
@@ -412,7 +454,13 @@ export function AttendanceLive({
                 : "bg-emerald-600 text-white hover:bg-emerald-700"
             }`}
           >
-            {busy ? "Saving…" : isOpen ? "Close attendance" : autoClosed ? "Reopen now" : "Open attendance"}
+            {busy
+              ? "Saving…"
+              : isOpen
+                ? "Close attendance"
+                : autoClosed
+                  ? "Reopen now"
+                  : "Open attendance"}
           </button>
         </div>
       </div>
@@ -420,10 +468,13 @@ export function AttendanceLive({
       {snapshot.closesAt ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-cream/60 px-4 py-2 text-xs text-slate-600 sm:px-5">
           <span className="font-semibold text-gold-dark">
-            {autoClosed ? "Auto-closed at" : "Auto-closes at"} {formatClock(snapshot.closesAt)}
+            {autoClosed ? "Auto-closed at" : "Auto-closes at"}{" "}
+            {formatClock(snapshot.closesAt)}
           </span>
           {autoClosed || now === null || closesAtMs === null ? null : (
-            <span className="font-mono text-[11px] text-slate-500">in {countdown(closesAtMs - now)}</span>
+            <span className="font-mono text-[11px] text-slate-500">
+              in {countdown(closesAtMs - now)}
+            </span>
           )}
           <button
             type="button"
@@ -461,7 +512,11 @@ export function AttendanceLive({
           </button>
           <button
             type="button"
-            onClick={() => patchMeeting({ closes_at: null }).then(() => setEditingAutoClose(false))}
+            onClick={() =>
+              patchMeeting({ closes_at: null }).then(() =>
+                setEditingAutoClose(false),
+              )
+            }
             disabled={busy}
             className="min-h-12 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-600 disabled:opacity-60"
           >
@@ -478,7 +533,10 @@ export function AttendanceLive({
       ) : null}
 
       {error ? (
-        <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">
+        <p
+          role="alert"
+          className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700"
+        >
           {error}
         </p>
       ) : null}
@@ -503,10 +561,14 @@ export function AttendanceLive({
                   <p className="truncate text-sm font-semibold text-navy">
                     {request.name}
                     {request.collegeId ? (
-                      <span className="ml-2 text-xs font-normal text-slate-400">{request.collegeId}</span>
+                      <span className="ml-2 text-xs font-normal text-slate-400">
+                        {request.collegeId}
+                      </span>
                     ) : null}
                   </p>
-                  <p className="text-[11px] text-slate-500">{describeRequest(request)}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {describeRequest(request)}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -558,12 +620,18 @@ export function AttendanceLive({
                   <p className="truncate text-sm font-semibold text-navy">
                     {report.name ?? "Name not given"}
                     {report.maheId ? (
-                      <span className="ml-2 font-mono text-xs font-normal text-slate-500">{report.maheId}</span>
+                      <span className="ml-2 font-mono text-xs font-normal text-slate-500">
+                        {report.maheId}
+                      </span>
                     ) : (
-                      <span className="ml-2 text-xs font-normal text-slate-400">no MAHE ID</span>
+                      <span className="ml-2 text-xs font-normal text-slate-400">
+                        no MAHE ID
+                      </span>
                     )}
                   </p>
-                  <p className="text-[11px] text-slate-500">{describeReport(report)}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {describeReport(report)}
+                  </p>
                   {report.note ? (
                     <p className="mt-1 whitespace-pre-wrap border-l-2 border-gold/40 pl-2 text-[11px] italic text-slate-600">
                       {report.note}
@@ -587,9 +655,15 @@ export function AttendanceLive({
       <div className="min-h-[16rem] flex-1 overflow-auto">
         {snapshot.attendees.length === 0 ? (
           <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 px-6 text-center">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-cream text-gold">⌛</span>
-            <p className="text-sm font-medium text-slate-500">Waiting for the first attendee…</p>
-            <p className="text-xs text-slate-400">Attendees appear here as they mark attendance.</p>
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-cream text-gold">
+              ⌛
+            </span>
+            <p className="text-sm font-medium text-slate-500">
+              Waiting for the first attendee…
+            </p>
+            <p className="text-xs text-slate-400">
+              Attendees appear here as they mark attendance.
+            </p>
           </div>
         ) : (
           <table className="w-full min-w-[34rem] text-left text-sm">
@@ -599,13 +673,17 @@ export function AttendanceLive({
                 <th className="px-2 py-2 font-semibold">Name</th>
                 <th className="px-2 py-2 font-semibold">MAHE ID</th>
                 <th className="px-2 py-2 font-semibold">Department</th>
-                <th className="px-4 py-2 text-right font-semibold sm:px-5">Time</th>
+                <th className="px-4 py-2 text-right font-semibold sm:px-5">
+                  Time
+                </th>
               </tr>
             </thead>
             <tbody>
               {snapshot.attendees.map((attendee, index) => (
                 <tr key={attendee.id} className="border-t border-line/70">
-                  <td className="px-4 py-2.5 text-xs text-slate-400 sm:px-5">{index + 1}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400 sm:px-5">
+                    {index + 1}
+                  </td>
                   <td className="px-2 py-2.5 font-medium text-navy">
                     {attendee.name}
                     {attendee.manualApproval ? (
@@ -614,8 +692,12 @@ export function AttendanceLive({
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.collegeId ?? "—"}</td>
-                  <td className="px-2 py-2.5 text-xs text-slate-500">{attendee.department ?? "—"}</td>
+                  <td className="px-2 py-2.5 text-xs text-slate-500">
+                    {attendee.collegeId ?? "—"}
+                  </td>
+                  <td className="px-2 py-2.5 text-xs text-slate-500">
+                    {attendee.department ?? "—"}
+                  </td>
                   <td className="px-4 py-2.5 text-right text-xs text-slate-500 sm:px-5">
                     {formatTime(attendee.markedAt)}
                   </td>
@@ -642,7 +724,7 @@ export function AttendanceLive({
                 setReportEmail(event.target.value);
                 setReportStatus(null);
               }}
-              placeholder="you@gmail.com, someone@gmail.com"
+              placeholder="Enter your email..."
               className="field focus:field-focus py-2"
               autoComplete="email"
             />
@@ -653,7 +735,11 @@ export function AttendanceLive({
             disabled={reportBusy || reportEmail.trim() === ""}
             className="min-h-12 rounded-lg bg-navy px-4 py-2 text-xs font-semibold text-white transition hover:bg-navy/90 disabled:opacity-60"
           >
-            {reportBusy ? "Working…" : meetingEnded ? "Resend report" : "End meeting & email report"}
+            {reportBusy
+              ? "Working…"
+              : meetingEnded
+                ? "Resend report"
+                : "End meeting & email report"}
           </button>
         </div>
         {reportStatus ? (
