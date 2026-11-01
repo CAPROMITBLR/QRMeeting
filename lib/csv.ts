@@ -14,16 +14,7 @@ export function toCsv(rows: Array<Array<string | number | null | undefined>>): s
   return "\uFEFF" + rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
 
-export function csvFileName(title: string): string {
-  return `${fileSlug(title) || "meeting"}-attendance.csv`;
-}
-
-export function fileSlug(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[^\w\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .slice(0, 60)
-    .replace(/^-+|-+$/g, "");
+/** Shared report file name: `meeting_<last 8 chars of the meeting id>.<ext>`. */
+export function reportFileName(meetingId: string, extension: "csv" | "xlsx"): string {
+  return `meeting_${meetingId.slice(-8)}.${extension}`;
 }

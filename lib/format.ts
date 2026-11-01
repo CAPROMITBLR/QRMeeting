@@ -28,6 +28,11 @@ export function formatDateTime(value: TimeInput): string {
   return dateTimeFormat.format(toDate(value));
 }
 
+/** "1 attendee" / "5 attendees" — count with the right word form. */
+export function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function formatTime(value: TimeInput): string {
   return timeFormat.format(toDate(value));
 }

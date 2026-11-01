@@ -1,5 +1,5 @@
 import { apiError } from "@/lib/http";
-import { csvFileName, toCsv } from "@/lib/csv";
+import { reportFileName, toCsv } from "@/lib/csv";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
@@ -10,8 +10,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
   if (!isUuid(id)) return apiError(403, "forbidden", "This host link is not valid.");
 
   try {
-    const [meeting] = await sql<{ title: string; host_token: string }[]>`
-      select title, host_token from public.meetings where id = ${id}
+    const [meeting] = await sql<{ host_token: string }[]>`
+      select host_token from public.meetings where id = ${id}
     `;
 
     if (!meeting || !hostKeyMatches(readHostKey(request.url), meeting.host_token)) {
@@ -23,26 +23,25 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
       college_id: string | null;
       department: string | null;
       marked_at: Date;
-      distance_m: number | null;
     }[]>`
-      select name, college_id, department, marked_at, distance_m
+      select name, college_id, department, marked_at
       from public.attendance
       where meeting_id = ${id}
       order by marked_at asc
     `;
 
     const csv = toCsv([
-      ["Name", "MAHE ID", "Department", "Marked at (IST)", "Distance from venue (m)"],
-      ...rows.map((row) => [
+      ["S.No", "Full name", "MAHE-ID", "Department", "Marked at (IST)"],
+      ...rows.map((row, index) => [
+        index + 1,
         row.name,
         row.college_id,
         row.department,
         formatDateTime(row.marked_at),
-        row.distance_m === null ? "" : Math.round(row.distance_m),
       ]),
     ]);
 
-    const fileName = csvFileName(meeting.title);
+    const fileName = reportFileName(id, "csv");
 
     return new Response(csv, {
       headers: {

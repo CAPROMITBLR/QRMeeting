@@ -1,8 +1,9 @@
-import { apiError } from "@/lib/http";
+import { reportFileName } from "@/lib/csv";
 import { buildAttendanceWorkbook } from "@/lib/attendance-export";
 import { sql } from "@/lib/db";
 import { loadFacultyRoster } from "@/lib/faculty";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
+import { apiError } from "@/lib/http";
 import { isUuid } from "@/lib/validation";
 
 type AttendanceRow = {
@@ -52,7 +53,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/meetings/[id
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `meeting_${id.slice(-8)}.xlsx`;
+    const fileName = reportFileName(id, "xlsx");
     return new Response(buffer, {
       headers: {
         "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

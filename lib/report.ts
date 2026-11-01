@@ -2,8 +2,8 @@ import "server-only";
 
 import { Buffer } from "node:buffer";
 
-import { csvFileName, toCsv } from "@/lib/csv";
-import { formatDateTime } from "@/lib/format";
+import { reportFileName, toCsv } from "@/lib/csv";
+import { countLabel, formatDateTime } from "@/lib/format";
 
 export type ReportAttendee = {
   name: string;
@@ -54,43 +54,53 @@ const ISSUE_REASON_LABELS: Record<string, string> = {
 };
 
 /** Same columns as the CSV export route, so both stay consistent. */
-export function buildReportCsv(attendees: ReportAttendee[]): {
+export function buildReportCsv(
+  meetingId: string,
+  attendees: ReportAttendee[],
+): {
   csv: string;
   fileName: string;
 } {
   const csv = toCsv([
-    ["Name", "MAHE ID", "Department", "Marked at (IST)", "Distance from venue (m)"],
-    ...attendees.map((person) => [
+    ["S.No", "Full name", "MAHE-ID", "Department", "Marked at (IST)"],
+    ...attendees.map((person, index) => [
+      index + 1,
       person.manualApproval ? `${person.name} (host-approved)` : person.name,
       person.collegeId,
       person.department,
       formatDateTime(person.markedAt),
-      person.distanceM === null ? "" : Math.round(person.distanceM),
     ]),
   ]);
-  return { csv, fileName: csvFileName("attendance") };
+  return { csv, fileName: reportFileName(meetingId, "csv") };
 }
 
 export function buildReportSubject(data: ReportData): string {
   return `Attendance report · ${formatDateTime(data.startsAt)} IST`;
 }
 
-export function buildReportText(data: ReportData, recipientNotes: string[]): string {
+export function buildReportText(
+  data: ReportData,
+  recipientNotes: string[],
+  hostUrl: string,
+): string {
   const lines: string[] = [];
   lines.push(`Attendance report — ${data.title}`);
-  lines.push(`Meeting started ${formatDateTime(data.startsAt)} IST · ended ${formatDateTime(data.endedAt)} IST`);
-  lines.push(`${data.attendees.length} attendee(s) marked attendance.`);
+  lines.push(
+    `${countLabel(data.attendees.length, "attendee")} marked attendance · ${formatDateTime(
+      data.startsAt,
+    )} – ${formatDateTime(data.endedAt)} IST`,
+  );
   lines.push("");
-  lines.push("Attendees (also attached as CSV):");
+  lines.push("S.No · Full name · MAHE-ID · Department · Marked at (IST)");
   data.attendees.forEach((person, index) => {
     const bits = [
-      `#${index + 1}`,
+      index + 1,
       person.manualApproval ? `${person.name} (host-approved)` : person.name,
       person.collegeId ?? "no MAHE ID",
       person.department ?? "no department",
       formatDateTime(person.markedAt),
     ];
-    lines.push(`  ${bits.join(" · ")}`);
+    lines.push(bits.join(" · "));
   });
   if (data.requests.length > 0) {
     lines.push("");
@@ -118,6 +128,10 @@ export function buildReportText(data: ReportData, recipientNotes: string[]): str
     lines.push("");
     lines.push(...recipientNotes);
   }
+  lines.push("");
+  lines.push(
+    `Download the CSV or Excel report from the host page any time: ${hostUrl}`,
+  );
   return lines.join("\r\n");
 }
 
@@ -129,15 +143,15 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export function buildReportHtml(data: ReportData): string {
+export function buildReportHtml(data: ReportData, hostUrl: string): string {
   const attendeeRows = data.attendees
     .map(
       (person, index) => `
         <tr>
           <td style="padding:6px 10px;border-top:1px solid #e2e8f0;color:#64748b">${index + 1}</td>
-          <td style="padding:6px 10px;border-top:1px solid #e2e8f0;color:#0f2545;font-weight:600">${
-            escapeHtml(person.name)
-          }${person.manualApproval ? '<span style="margin-left:6px;font-size:10px;color:#92700b;background:#faf3dd;border-radius:4px;padding:1px 6px">host-approved</span>' : ""}</td>
+          <td style="padding:6px 10px;border-top:1px solid #e2e8f0;color:#0f2545;font-weight:600">${escapeHtml(
+            person.name,
+          )}${person.manualApproval ? '<span style="margin-left:6px;font-size:10px;color:#92700b;background:#faf3dd;border-radius:4px;padding:1px 6px">host-approved</span>' : ""}</td>
           <td style="padding:6px 10px;border-top:1px solid #e2e8f0;color:#475569">${escapeHtml(person.collegeId ?? "—")}</td>
           <td style="padding:6px 10px;border-top:1px solid #e2e8f0;color:#475569">${escapeHtml(person.department ?? "—")}</td>
           <td style="padding:6px 10px;border-top:1px solid #e2e8f0;color:#475569;white-space:nowrap">${escapeHtml(formatDateTime(person.markedAt))}</td>
@@ -148,26 +162,22 @@ export function buildReportHtml(data: ReportData): string {
   const sections: string[] = [];
 
   sections.push(
-    `<p style="margin:0 0 12px;color:#334155">The attendance sheet for <strong>${escapeHtml(
-      data.title,
-    )}</strong> (${escapeHtml(formatDateTime(data.startsAt))} IST) is attached as a CSV file. Meeting ended ${escapeHtml(
-      formatDateTime(data.endedAt),
-    )} IST.</p>`,
-  );
-
-  sections.push(
-    `<p style="margin:0 0 16px"><strong style="color:#0f2545;font-size:15px">${data.attendees.length}</strong><span style="color:#64748b"></span> attendee(s) marked attendance.</p>`,
+    `<p style="margin:0 0 16px;color:#334155"><strong style="color:#0f2545;font-size:15px">${escapeHtml(
+      countLabel(data.attendees.length, "attendee"),
+    )}</strong><span style="color:#64748b"> marked attendance · ${escapeHtml(
+      formatDateTime(data.startsAt),
+    )} – ${escapeHtml(formatDateTime(data.endedAt))} IST</span></p>`,
   );
 
   if (data.attendees.length > 0) {
     sections.push(
       `<table border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;margin:0 0 18px">
         <thead><tr>
-          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">#</th>
-          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">Name</th>
-          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">MAHE ID</th>
+          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">S.No</th>
+          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">Full name</th>
+          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">MAHE-ID</th>
           <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">Department</th>
-          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">Marked at</th>
+          <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8">Marked at (IST)</th>
         </tr></thead>
         <tbody>${attendeeRows}</tbody>
       </table>`,
@@ -210,9 +220,12 @@ export function buildReportHtml(data: ReportData): string {
   return `<!doctype html><html><body style="margin:0;background:#f6f4f0;padding:24px">
     <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px">
       <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c19a33;font-weight:700;margin:0 0 6px">MAHE Meeting Attendance</div>
-      <h1 style="margin:0 0 16px;font-size:19px;color:#0f2545">Attendance report</h1>
+      <h1 style="margin:0 0 16px;font-size:19px;color:#0f2545">${escapeHtml(data.title)}</h1>
       ${sections.join("\n      ")}
-      <p style="margin:16px 0 0;font-size:11px;color:#94a3b8">Records are also exportable any time from the meeting's host page (CSV or Excel).</p>
+      <p style="margin:24px 0 0;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b">
+        <a href="${escapeHtml(hostUrl)}" style="display:inline-block;background:#0f2545;color:#ffffff;text-decoration:none;font-weight:600;font-size:12px;padding:8px 14px;border-radius:6px">Open host page</a>
+        <span style="margin-left:10px">Download the CSV or Excel report from the Host Page any time.</span>
+      </p>
     </div>
   </body></html>`;
 }
@@ -238,10 +251,15 @@ export async function sendReportEmail(options: {
 }): Promise<SendResult | { ok: false; error: string }> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
-    return { ok: false, error: "Email is not set up yet — add RESEND_API_KEY to the environment." };
+    return {
+      ok: false,
+      error: "Email is not set up yet — add RESEND_API_KEY to the environment.",
+    };
   }
 
-  const from = process.env.RESEND_FROM?.trim() || "MAHE Attendance <onboarding@resend.dev>";
+  const from =
+    process.env.RESEND_FROM?.trim() ||
+    "MAHE Attendance <onboarding@resend.dev>";
 
   let response: Response;
   try {
@@ -258,14 +276,21 @@ export async function sendReportEmail(options: {
         html: options.html,
         text: options.text,
         attachments: [
-          { filename: options.fileName, content: Buffer.from(options.csv, "utf8").toString("base64") },
+          {
+            filename: options.fileName,
+            content: Buffer.from(options.csv, "utf8").toString("base64"),
+          },
         ],
       }),
       signal: AbortSignal.timeout(20_000),
     });
   } catch (error) {
     console.error("report email request failed", error);
-    return { ok: false, error: "Could not reach the email service. The meeting is ended — try “Resend report”." };
+    return {
+      ok: false,
+      error:
+        "Could not reach the email service. The meeting is ended — try “Resend report”.",
+    };
   }
 
   if (response.ok) return { ok: true };
@@ -279,7 +304,10 @@ export async function sendReportEmail(options: {
     };
     detail = body.message ?? body.description ?? null;
     if (!detail && body.details) {
-      detail = typeof body.details === "string" ? body.details : Object.values(body.details).flat().join(" ");
+      detail =
+        typeof body.details === "string"
+          ? body.details
+          : Object.values(body.details).flat().join(" ");
     }
   } catch {
     detail = null;

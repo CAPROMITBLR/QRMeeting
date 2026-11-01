@@ -1,6 +1,6 @@
 import { after } from "next/server";
 
-import { apiError, json } from "@/lib/http";
+import { getBaseUrl, apiError, json } from "@/lib/http";
 import { sql } from "@/lib/db";
 import { hostKeyMatches, readHostKey } from "@/lib/host-key";
 import { notifyMeetingChanged } from "@/lib/realtime";
@@ -55,11 +55,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/meetings/[i
       return apiError(403, "forbidden", "This host link is not valid.");
     }
 
-    // 1. End the meeting right away: closing `is_open` gates new marks, and
-    // `ended_at` marks the report cut-off.
+    // 1. End the meeting right away. `ended_at` is always the latest end, so
+    // reopening and ending again moves the report cut-off forward instead of
+    // keeping the first close time.
     const [ended] = await sql<{ ended_at: Date; report_sent_at: Date | null }[]>`
       update public.meetings
-      set is_open = false, ended_at = coalesce(ended_at, now())
+      set is_open = false, ended_at = now()
       where id = ${id}
       returning ended_at, report_sent_at
     `;
@@ -157,12 +158,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/meetings/[i
         : [];
 
     // 3. Send.
-    const { csv, fileName } = buildReportCsv(attendees);
+    const hostUrl = `${getBaseUrl(request)}/meetings/${id}?key=${encodeURIComponent(meeting.host_token)}`;
+    const { csv, fileName } = buildReportCsv(id, attendees);
     const result = await sendReportEmail({
       to: recipients,
       subject: buildReportSubject(data),
-      html: buildReportHtml(data),
-      text: buildReportText(data, recipientNotes),
+      html: buildReportHtml(data, hostUrl),
+      text: buildReportText(data, recipientNotes, hostUrl),
       csv,
       fileName,
     });

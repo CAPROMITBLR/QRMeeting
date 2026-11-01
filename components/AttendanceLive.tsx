@@ -247,6 +247,7 @@ export function AttendanceLive({
       const data = (await response.json()) as {
         isOpen?: boolean;
         closesAt?: string | null;
+        endedAt?: string | null;
         message?: string;
       };
       if (!response.ok) {
@@ -262,6 +263,7 @@ export function AttendanceLive({
           isOpen:
             typeof data.isOpen === "boolean" ? data.isOpen : current.isOpen,
           closesAt,
+          endedAt: data.endedAt === undefined ? current.endedAt : data.endedAt,
           autoClosed: closesAt !== null && Date.parse(closesAt) <= Date.now(),
         };
       });

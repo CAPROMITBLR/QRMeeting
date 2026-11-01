@@ -62,15 +62,18 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/meetings/[
     const nextIsOpen = typeof is_open === "boolean" ? is_open : meeting.is_open;
     const closesAtValue = nextClosesAt === undefined ? meeting.closes_at : nextClosesAt;
 
-    const [updated] = await sql<{ is_open: boolean; closes_at: Date | null }[]>`
+    const [updated] = await sql<{ is_open: boolean; closes_at: Date | null; ended_at: Date | null }[]>`
       update public.meetings
-      set is_open = ${nextIsOpen}, closes_at = ${closesAtValue}
+      set is_open = ${nextIsOpen},
+          closes_at = ${closesAtValue},
+          ended_at = case when ${nextIsOpen} then null else ended_at end,
+          report_sent_at = case when ${nextIsOpen} then null else report_sent_at end
       where id = ${id}
-      returning is_open, closes_at
+      returning is_open, closes_at, ended_at
     `;
 
     after(() => notifyMeetingChanged(id, "meeting"));
-    return json({ isOpen: updated.is_open, closesAt: updated.closes_at });
+    return json({ isOpen: updated.is_open, closesAt: updated.closes_at, endedAt: updated.ended_at });
   } catch (error) {
     console.error("toggle meeting failed", error);
     return apiError(500, "server_error", "Could not update the meeting.");

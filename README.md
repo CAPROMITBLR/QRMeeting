@@ -150,7 +150,7 @@ people, so the roster can be corrected at the source.
 | `POST /api/meetings/[id]/faculty-reports/[reportId]?key=` | host key | `{ action: "resolve" }` — resolving from the host page |
 | `POST /api/join-requests` | none | `{ meetingId, name, collegeId, department, deviceId, lat?, lng?, accuracy?, reason }` → pending request |
 | `POST /api/meetings/[id]/join-requests/[requestId]?key=` | host key | `{ action: "approve" \| "reject" }`; approve marks attendance |
-| `GET /api/meetings/[id]/export.csv?key=` | host key | `<title-slug>-attendance.csv`, UTF-8 BOM, CRLF |
+| `GET /api/meetings/[id]/export.csv?key=` | host key | `meeting_<last-8-id>.csv` — S.No, Full name, MAHE-ID, Department, Marked at (IST); UTF-8 BOM, CRLF |
 | `GET /api/meetings/[id]/export.xlsx?key=` | host key | Styled workbook with summary, department, attendance and faculty-status sheets |
 | `GET /api/meetings/[id]/qr.png?key=` | host key | Static QR PNG attachment named `meeting_<last-8-id>.png` |
 | `DELETE /api/meetings/[id]/attendance/[attendanceId]?key=` | host key | removes one entry |
@@ -237,7 +237,7 @@ their phone's camera or QR scanner to open the attendance link.
 7. **Auto-closed meeting** — create one with a 30 minute duration and wait (or set `closes_at` in the past in
    SQL) → 409 closed, host page shows "Auto-closed at …" with a "Reopen now" button; extend the time and marking
    works again.
-8. **CSV opens correctly** — Export CSV, open in Excel/Sheets: 4 columns, no formula evaluation, names with
+8. **CSV opens correctly** — Export CSV, open in Excel/Sheets: 5 columns, no formula evaluation, names with
    commas/quotes intact.
 9. **Delete entry** — press ✕ on a row, confirm, count drops; the row disappears and stays gone after refresh.
 10. **Rate limits** — 11 attendance marks in a minute → 429 with `Retry-After`; 6 meeting creations in a minute →
