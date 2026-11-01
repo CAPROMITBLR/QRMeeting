@@ -2,6 +2,8 @@ import "server-only";
 
 import { Buffer } from "node:buffer";
 
+import nodemailer from "nodemailer";
+
 import { reportFileName, toCsv } from "@/lib/csv";
 import { countLabel, formatDateTime } from "@/lib/format";
 
@@ -224,22 +226,46 @@ export function buildReportHtml(data: ReportData, hostUrl: string): string {
       ${sections.join("\n      ")}
       <p style="margin:24px 0 0;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b">
         <a href="${escapeHtml(hostUrl)}" style="display:inline-block;background:#0f2545;color:#ffffff;text-decoration:none;font-weight:600;font-size:12px;padding:8px 14px;border-radius:6px">Open host page</a>
-        <span style="margin-left:10px">Download the CSV or Excel report from the Host Page any time.</span>
+        <span style="margin-left:10px">Download the CSV or Excel report from there any time.</span>
       </p>
     </div>
   </body></html>`;
 }
 
 export type SendResult = { ok: true };
+export type SendFailure = { ok: false; error: string };
+
+/** App passwords are often pasted with their grouping spaces; strip them. */
+function gmailCredentials(): { user: string; pass: string } | null {
+  const user = process.env.GMAIL_USER?.trim();
+  const pass = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, "");
+  if (!user || !pass) return null;
+  return { user, pass };
+}
+
+function describeMailError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const response = (error as { response?: string } | null)?.response ?? "";
+  if (code === "EAUTH" || /\b(534|535|5\.7\.8)\b/.test(response)) {
+    return (
+      "Gmail rejected the sign-in — check GMAIL_USER and GMAIL_APP_PASSWORD " +
+      "(use a 16-character App Password, not your account password)."
+    );
+  }
+  if (["ECONNECTION", "ETIMEDOUT", "ESOCKET", "EDNS"].includes(code ?? "")) {
+    return "Could not reach Gmail's SMTP server. The meeting is ended — try “Resend report”.";
+  }
+  const message = (error as { message?: string } | null)?.message;
+  return (
+    message?.trim() ||
+    "The email service refused the message. The meeting is ended — try “Resend report”."
+  );
+}
 
 /**
- * Sends the report through Resend (https://resend.com). Returns a
- * human-readable failure instead of throwing so the route can keep the
- * meeting ended and offer a retry.
- *
- * `RESEND_FROM` sets the sender ("Name <addr>"); without it the test sender
- * is used, which Resend only allows to deliver to the account owner's own
- * address until a domain is verified.
+ * Sends the report over Gmail SMTP with nodemailer. Returns a human-readable
+ * failure instead of throwing so the route can keep the meeting ended and
+ * offer a retry.
  */
 export async function sendReportEmail(options: {
   to: string[];
@@ -248,81 +274,43 @@ export async function sendReportEmail(options: {
   text: string;
   csv: string;
   fileName: string;
-}): Promise<SendResult | { ok: false; error: string }> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    return {
-      ok: false,
-      error: "Email is not set up yet — add RESEND_API_KEY to the environment.",
-    };
-  }
-
-  const from =
-    process.env.RESEND_FROM?.trim() ||
-    "MAHE Attendance <onboarding@resend.dev>";
-
-  let response: Response;
-  try {
-    response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-        attachments: [
-          {
-            filename: options.fileName,
-            content: Buffer.from(options.csv, "utf8").toString("base64"),
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-  } catch (error) {
-    console.error("report email request failed", error);
+}): Promise<SendResult | SendFailure> {
+  const credentials = gmailCredentials();
+  if (!credentials) {
     return {
       ok: false,
       error:
-        "Could not reach the email service. The meeting is ended — try “Resend report”.",
+        "Email is not set up yet — add GMAIL_USER and GMAIL_APP_PASSWORD to the environment.",
     };
   }
 
-  if (response.ok) return { ok: true };
-
-  let detail: string | null = null;
   try {
-    const body = (await response.json()) as {
-      message?: string;
-      description?: string;
-      details?: Record<string, string[]> | string;
-    };
-    detail = body.message ?? body.description ?? null;
-    if (!detail && body.details) {
-      detail =
-        typeof body.details === "string"
-          ? body.details
-          : Object.values(body.details).flat().join(" ");
-    }
-  } catch {
-    detail = null;
+    const transport = nodemailer.createTransport({
+      service: "gmail",
+      auth: credentials,
+      connectionTimeout: 20_000,
+      greetingTimeout: 20_000,
+      socketTimeout: 20_000,
+    });
+
+    await transport.sendMail({
+      from: `MAHE Attendance <${credentials.user}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+      attachments: [
+        {
+          filename: options.fileName,
+          content: Buffer.from(options.csv, "utf8"),
+          contentType: "text/csv; charset=utf-8",
+        },
+      ],
+    });
+
+    return { ok: true };
+  } catch (error) {
+    console.error("report email failed", error);
+    return { ok: false, error: describeMailError(error) };
   }
-  if (!detail) {
-    detail =
-      response.status === 401
-        ? "The email API key was rejected — check RESEND_API_KEY."
-        : `The email service refused the message (HTTP ${response.status}).`;
-  }
-  if (/domain|verified|onboarding|test-email|not authorized/i.test(detail)) {
-    detail =
-      `${detail} Tip: with no verified domain, the test sender can only deliver to your own email address. ` +
-      `Verify your domain in Resend and set RESEND_FROM (e.g. "MAHE Attendance <no-reply@yourdomain>") to send to anyone.`;
-  }
-  console.error("report email rejected", response.status, detail);
-  return { ok: false, error: detail };
 }

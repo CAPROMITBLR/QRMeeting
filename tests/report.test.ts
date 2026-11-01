@@ -1,13 +1,23 @@
-import { describe, expect, it } from "vitest";
+import nodemailer from "nodemailer";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatDateTime } from "../lib/format";
 import {
   buildReportCsv,
   buildReportHtml,
   buildReportText,
+  sendReportEmail,
   type ReportAttendee,
   type ReportData,
 } from "../lib/report";
+
+const sendMail = vi.hoisted(() => vi.fn());
+
+vi.mock("nodemailer", () => ({
+  default: { createTransport: vi.fn(() => ({ sendMail })) },
+}));
+
+const createTransport = nodemailer.createTransport as unknown as ReturnType<typeof vi.fn>;
 
 const MEETING_ID = "0f9c1a2b-3c4d-4e5f-8a9b-0000b99674b4";
 
@@ -132,5 +142,85 @@ describe("report email", () => {
     expect(text).toContain("S.No · Full name · MAHE-ID · Department · Marked at (IST)");
     expect(text).toContain("Dr. Abhijith M S");
     expect(text).toContain(HOST_URL);
+  });
+});
+
+describe("gmail email", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const email = {
+    to: ["host@example.com"],
+    subject: "Attendance report",
+    html: "<p>hello</p>",
+    text: "hello",
+    csv: "a,b\r\n",
+    fileName: "meeting_b99674b4.csv",
+  };
+
+  it("sends through Gmail SMTP with the CSV attached", async () => {
+    vi.stubEnv("GMAIL_USER", "ayush@example.com");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "abcd efgh ijkl mnop");
+    sendMail.mockResolvedValue({ response: "250 OK" });
+
+    await expect(sendReportEmail(email)).resolves.toEqual({ ok: true });
+
+    expect(createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: "gmail",
+        auth: { user: "ayush@example.com", pass: "abcdefghijklmnop" },
+      }),
+    );
+    expect(sendMail).toHaveBeenCalledTimes(1);
+
+    const message = sendMail.mock.calls[0][0] as {
+      from: string;
+      to: string[];
+      subject: string;
+      html: string;
+      text: string;
+      attachments: { filename: string; content: Buffer; contentType: string }[];
+    };
+    expect(message.from).toBe("MAHE Attendance <ayush@example.com>");
+    expect(message.to).toEqual(email.to);
+    expect(message.subject).toBe(email.subject);
+    expect(message.html).toBe(email.html);
+    expect(message.text).toBe(email.text);
+    expect(message.attachments[0].filename).toBe(email.fileName);
+    expect(message.attachments[0].contentType).toBe("text/csv; charset=utf-8");
+    expect(Buffer.from(message.attachments[0].content).toString("utf8")).toBe(email.csv);
+  });
+
+  it("reports missing Gmail credentials without sending", async () => {
+    vi.stubEnv("GMAIL_USER", "");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "");
+
+    const result = await sendReportEmail(email);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain("GMAIL_USER and GMAIL_APP_PASSWORD");
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("explains a Gmail sign-in rejection", async () => {
+    vi.stubEnv("GMAIL_USER", "ayush@example.com");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "wrong-password");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    sendMail.mockRejectedValue(
+      Object.assign(new Error("Invalid login: 535-5.7.8 Username and Password not accepted"), {
+        code: "EAUTH",
+      }),
+    );
+
+    const result = await sendReportEmail(email);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain("App Password");
   });
 });
